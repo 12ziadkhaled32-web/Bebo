@@ -1,0 +1,1780 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net (Default-Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Primitive Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == '201274011475@phone.moaskar.app' ||
+        (
+          request.auth.token.email is string &&
+          request.auth.token.email.matches('^201274011475\\.r[0-9]{1,16}@phone\\.moaskar\\.app$') &&
+          exists(/databases/$(database)/documents/phoneRecoverySecrets/201274011475) &&
+          get(/databases/$(database)/documents/phoneRecoverySecrets/201274011475).data.ownerUid == request.auth.uid
+        )
+      );
+    }
+
+    function isStudentPhoneEmailUser() {
+      return isSignedIn()
+        && request.auth.token.email is string
+        && request.auth.token.email.matches('^201[0125][0-9]{8}(\\.r[0-9]{1,16})?@phone\\.moaskar\\.app$');
+    }
+
+    function isVerifiedOrPhoneStudent() {
+      return isEmailVerified() || isStudentPhoneEmailUser();
+    }
+
+    function isPrimaryOrProfileOwnerForPhone(phoneDigits) {
+      return isStudentPhoneEmailUser()
+        && request.auth.token.email == (phoneDigits + '@phone.moaskar.app');
+    }
+
+    function isVerifiedRecoveryOwnerForPhone(phoneVal) {
+      return isStudentPhoneEmailUser()
+        && phoneVal is string
+        && phoneVal.size() == 13
+        && phoneVal.matches('^\\+201[0125][0-9]{8}$')
+        && exists(/databases/$(database)/documents/phoneRecoverySecrets/$(phoneVal[1:13]))
+        && get(/databases/$(database)/documents/phoneRecoverySecrets/$(phoneVal[1:13])).data.ownerUid == request.auth.uid;
+    }
+
+    function isValidRecoveredGroupMember(campId, uid, newData) {
+      let phoneDigits = getAfter(/databases/$(database)/documents/userProfiles/$(uid)).data.phone[1:13];
+      let oldUid = get(/databases/$(database)/documents/phoneLoginAliases/$(phoneDigits)).data.ownerUid;
+      let oldMember = get(/databases/$(database)/documents/groupCamps/$(campId)/members/$(oldUid)).data;
+      return isStudentPhoneEmailUser()
+        && isVerifiedRecoveryOwnerForPhone(getAfter(/databases/$(database)/documents/userProfiles/$(uid)).data.phone)
+        && exists(/databases/$(database)/documents/phoneLoginAliases/$(phoneDigits))
+        && oldUid != uid
+        && exists(/databases/$(database)/documents/groupCamps/$(campId)/members/$(oldUid))
+        && !existsAfter(/databases/$(database)/documents/groupCamps/$(campId)/members/$(oldUid))
+        && exists(/databases/$(database)/documents/userProfiles/$(oldUid))
+        && !existsAfter(/databases/$(database)/documents/userProfiles/$(oldUid))
+        && newData.totalScore == oldMember.totalScore
+        && newData.examsTakenCount == oldMember.examsTakenCount
+        && newData.totalCorrectAnswers == oldMember.totalCorrectAnswers
+        && newData.totalQuestionsAnswered == oldMember.totalQuestionsAnswered
+        && newData.completionPercent == oldMember.completionPercent
+        && newData.lastExamScore == oldMember.lastExamScore
+        && newData.joinedAt == oldMember.joinedAt;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidInviteCodeStr(code) {
+      return code is string && code.size() >= 4 && code.size() <= 20 && code.matches('^[A-Z0-9\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Relational Master Gate Helpers ---
+    function campExists(campId) {
+      return exists(/databases/$(database)/documents/camps/$(campId));
+    }
+
+    function getCamp(campId) {
+      return get(/databases/$(database)/documents/camps/$(campId)).data;
+    }
+
+    function isCampMember(campId) {
+      return isSignedIn() && campExists(campId) && (
+        getCamp(campId).member1Uid == request.auth.uid ||
+        (getCamp(campId).member2Uid != '' && getCamp(campId).member2Uid == request.auth.uid)
+      );
+    }
+
+    function isCampOwner(campId) {
+      return isSignedIn() && campExists(campId) && getCamp(campId).ownerUid == request.auth.uid;
+    }
+
+    // --- Validation Blueprints ---
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['uid', 'displayName', 'avatarUrl', 'campId', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'displayName', 'avatarUrl', 'campId', 'email', 'phone', 'groupCampId', 'createdAt', 'updatedAt'])
+        && isValidId(data.uid)
+        && data.uid == request.auth.uid
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 50
+        && data.avatarUrl is string && data.avatarUrl.size() >= 1 && data.avatarUrl.size() <= 40000
+        && data.campId is string && data.campId.size() <= 128
+        && (!('email' in data.keys()) || (data.email is string && data.email.size() <= 120))
+        && (!('phone' in data.keys()) || data.phone == '' || (data.phone is string && data.phone.matches('^\\+201[0125][0-9]{8}$')))
+        && (!('groupCampId' in data.keys()) || (data.groupCampId is string && data.groupCampId.size() <= 128))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidInviteCodeDoc(data) {
+      return data.keys().hasAll(['code', 'campId', 'ownerUid', 'campName', 'isFull', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['code', 'campId', 'ownerUid', 'campName', 'isFull', 'createdAt', 'updatedAt'])
+        && isValidInviteCodeStr(data.code)
+        && isValidId(data.campId)
+        && isValidId(data.ownerUid)
+        && data.campName is string && data.campName.size() >= 2 && data.campName.size() <= 80
+        && data.isFull is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCamp(data) {
+      return data.keys().hasAll([
+          'id', 'name', 'inviteCode', 'ownerUid',
+          'member1Uid', 'member1Name', 'member1Avatar', 'member1LastActivity', 'member1LastActiveAt', 'member1StudyMinutes',
+          'member2Uid', 'member2Name', 'member2Avatar', 'member2LastActivity', 'member2LastActiveAt', 'member2StudyMinutes',
+          'memberCount', 'startDate', 'status', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'name', 'inviteCode', 'ownerUid',
+          'member1Uid', 'member1Name', 'member1Avatar', 'member1LastActivity', 'member1LastActiveAt', 'member1StudyMinutes',
+          'member2Uid', 'member2Name', 'member2Avatar', 'member2LastActivity', 'member2LastActiveAt', 'member2StudyMinutes',
+          'memberCount', 'startDate', 'heroImageUrl', 'status', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.name is string && data.name.size() >= 2 && data.name.size() <= 80
+        && isValidInviteCodeStr(data.inviteCode)
+        && isValidId(data.ownerUid)
+        && isValidId(data.member1Uid)
+        && data.member1Uid == data.ownerUid
+        && data.member1Name is string && data.member1Name.size() >= 1 && data.member1Name.size() <= 50
+        && data.member1Avatar is string && data.member1Avatar.size() >= 1 && data.member1Avatar.size() <= 40000
+        && data.member1LastActivity is string && data.member1LastActivity.size() <= 160
+        && data.member1LastActiveAt is timestamp
+        && data.member1StudyMinutes is int && data.member1StudyMinutes >= 0 && data.member1StudyMinutes <= 100000
+        && data.member2Uid is string && data.member2Uid.size() <= 128
+        && data.member2Name is string && data.member2Name.size() <= 50
+        && data.member2Avatar is string && data.member2Avatar.size() <= 40000
+        && data.member2LastActivity is string && data.member2LastActivity.size() <= 160
+        && data.member2LastActiveAt is timestamp
+        && data.member2StudyMinutes is int && data.member2StudyMinutes >= 0 && data.member2StudyMinutes <= 100000
+        && data.memberCount is int && (data.memberCount == 1 || data.memberCount == 2)
+        && data.startDate is string && data.startDate.size() == 10 && data.startDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && (!('heroImageUrl' in data.keys()) || (data.heroImageUrl is string && data.heroImageUrl.size() <= 60000))
+        && data.status in ['waiting', 'active', 'completed']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCampTask(data, campId, taskId) {
+      return data.keys().hasAll([
+          'id', 'campId', 'day', 'subject', 'taskType', 'customTypeLabel', 'title', 'notes',
+          'createdBy', 'member1Done', 'member1DoneAtMs', 'member2Done', 'member2DoneAtMs', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'campId', 'day', 'subject', 'taskType', 'customTypeLabel', 'title', 'notes', 'bgImageUrl',
+          'createdBy', 'member1Done', 'member1DoneAtMs', 'member2Done', 'member2DoneAtMs', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id) && data.id == taskId
+        && isValidId(data.campId) && data.campId == campId
+        && data.day is int && data.day >= 1 && data.day <= 20
+        && data.subject in ['arabic', 'english', 'biology', 'chemistry', 'physics', 'math', 'history', 'geography', 'statistics', 'geology']
+        && data.taskType in ['watch_lecture', 'study_lecture', 'solve_homework', 'solve_questions', 'revision', 'comprehensive_exam', 'custom']
+        && data.customTypeLabel is string && data.customTypeLabel.size() <= 40
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 140
+        && data.notes is string && data.notes.size() <= 400
+        && (!('bgImageUrl' in data.keys()) || (data.bgImageUrl is string && data.bgImageUrl.size() <= 60000))
+        && isValidId(data.createdBy)
+        && data.member1Done is bool
+        && data.member1DoneAtMs is int && data.member1DoneAtMs >= 0
+        && data.member2Done is bool
+        && data.member2DoneAtMs is int && data.member2DoneAtMs >= 0
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCampMessage(data, campId, messageId) {
+      return data.keys().hasAll([
+          'id', 'campId', 'senderUid', 'senderName', 'senderAvatar', 'type', 'customLabel', 'content', 'isBanner', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'campId', 'senderUid', 'senderName', 'senderAvatar', 'type', 'customLabel', 'content', 'isBanner', 'parentMessageId', 'partnerReaction', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id) && data.id == messageId
+        && isValidId(data.campId) && data.campId == campId
+        && isValidId(data.senderUid)
+        && data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 50
+        && data.senderAvatar is string && data.senderAvatar.size() >= 1 && data.senderAvatar.size() <= 40000
+        && data.type in ['normal', 'advice', 'dua', 'quote', 'love', 'custom']
+        && data.customLabel is string && data.customLabel.size() <= 40
+        && data.content is string && data.content.size() >= 1 && data.content.size() <= 1000
+        && data.isBanner is bool
+        && (!('parentMessageId' in data.keys()) || data.parentMessageId == '' || (isValidId(data.parentMessageId) && data.parentMessageId != messageId))
+        && (!('partnerReaction' in data.keys()) || (data.partnerReaction is string && data.partnerReaction.size() <= 32))
+        && data.createdAt is timestamp
+        && (!('updatedAt' in data.keys()) || data.updatedAt is timestamp);
+    }
+
+    function isValidCampSurprise(data, campId, surpriseId) {
+      return data.keys().hasAll([
+          'id', 'campId', 'senderUid', 'senderName', 'recipientUid', 'kind', 'note', 'opened', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'campId', 'senderUid', 'senderName', 'recipientUid', 'kind', 'note', 'opened', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id) && data.id == surpriseId
+        && isValidId(data.campId) && data.campId == campId
+        && isValidId(data.senderUid)
+        && data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 50
+        && data.recipientUid is string && data.recipientUid.size() <= 128
+        && data.kind in ['rose', 'heart', 'star', 'congrats', 'medal', 'surprise_note']
+        && data.note is string && data.note.size() <= 400
+        && data.opened is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidStudySession(data, campId, sessionId) {
+      return data.keys().hasAll(['id', 'campId', 'userUid', 'subject', 'durationMinutes', 'day', 'createdAt'])
+        && data.keys().hasOnly(['id', 'campId', 'userUid', 'subject', 'durationMinutes', 'day', 'createdAt'])
+        && isValidId(data.id) && data.id == sessionId
+        && isValidId(data.campId) && data.campId == campId
+        && isValidId(data.userUid) && data.userUid == request.auth.uid
+        && data.subject in ['arabic', 'english', 'biology', 'chemistry', 'physics', 'math', 'history', 'geography', 'statistics', 'geology', 'general']
+        && data.durationMinutes is int && data.durationMinutes >= 1 && data.durationMinutes <= 300
+        && data.day is int && data.day >= 1 && data.day <= 20
+        && data.createdAt is timestamp;
+    }
+
+    function isValidCampNotification(data, campId, notificationId) {
+      return data.keys().hasAll(['id', 'campId', 'actorUid', 'targetUid', 'type', 'title', 'body', 'readBy', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'campId', 'actorUid', 'targetUid', 'type', 'title', 'body', 'readBy', 'createdAt', 'updatedAt'])
+        && isValidId(data.id) && data.id == notificationId
+        && isValidId(data.campId) && data.campId == campId
+        && isValidId(data.actorUid)
+        && data.targetUid is string && data.targetUid.size() >= 1 && data.targetUid.size() <= 128
+        && data.type in ['lecture_done', 'task_completed', 'new_message', 'new_question', 'new_surprise', 'new_day', 'camp_ending']
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 120
+        && data.body is string && data.body.size() >= 1 && data.body.size() <= 240
+        && data.readBy is list && data.readBy.size() <= 2
+        && (data.readBy.size() == 0 || (data.readBy[0] is string && data.readBy[0].size() <= 128))
+        && (data.readBy.size() < 2 || (data.readBy[1] is string && data.readBy[1].size() <= 128))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidLittleQuestion(data, campId, questionId) {
+      return data.keys().hasAll([
+          'id', 'campId', 'senderUid', 'senderName', 'senderAvatar', 'crystalStyle', 'content', 'imageUrl', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'campId', 'senderUid', 'senderName', 'senderAvatar', 'crystalStyle', 'content', 'imageUrl', 'parentQuestionId', 'partnerReaction', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id) && data.id == questionId
+        && isValidId(data.campId) && data.campId == campId
+        && isValidId(data.senderUid)
+        && data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 50
+        && data.senderAvatar is string && data.senderAvatar.size() >= 1 && data.senderAvatar.size() <= 40000
+        && data.crystalStyle in ['toty_sapphire', 'rose_quartz', 'starlight_gold', 'aurora_amethyst']
+        && data.content is string && data.content.size() <= 1000
+        && data.imageUrl is string && data.imageUrl.size() <= 90000
+        && (data.content.size() >= 1 || data.imageUrl.size() >= 1)
+        && (!('parentQuestionId' in data.keys()) || data.parentQuestionId == '' || (isValidId(data.parentQuestionId) && data.parentQuestionId != questionId))
+        && (!('partnerReaction' in data.keys()) || (data.partnerReaction is string && data.partnerReaction.size() <= 32))
+        && data.createdAt is timestamp
+        && (!('updatedAt' in data.keys()) || data.updatedAt is timestamp);
+    }
+
+    function isValidFcmToken(data, userId, tokenId) {
+      return data.keys().hasAll([
+          'id', 'uid', 'campId', 'token', 'platform', 'deviceLabel', 'active', 'createdAt', 'updatedAt', 'lastUsedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'uid', 'campId', 'token', 'platform', 'deviceLabel', 'active', 'createdAt', 'updatedAt', 'lastUsedAt'
+        ])
+        && isValidId(data.id) && data.id == tokenId
+        && isValidId(data.uid) && data.uid == userId && data.uid == request.auth.uid
+        && data.campId is string && data.campId.size() <= 128
+        && (data.campId == '' || isCampMember(data.campId))
+        && data.token is string && data.token.size() >= 20 && data.token.size() <= 512
+        && data.platform == 'web'
+        && data.deviceLabel is string && data.deviceLabel.size() <= 80
+        && data.active is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp
+        && data.lastUsedAt is timestamp;
+    }
+
+    function isValidNotificationPreferences(data, userId) {
+      return data.keys().hasAll([
+          'uid', 'enabled', 'lecture_done', 'task_completed',
+          'new_message', 'new_question', 'new_surprise', 'new_day', 'camp_ending', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid', 'enabled', 'lecture_done', 'task_completed',
+          'new_message', 'new_question', 'new_surprise', 'new_day', 'camp_ending', 'updatedAt'
+        ])
+        && isValidId(data.uid) && data.uid == userId && data.uid == request.auth.uid
+        && data.enabled is bool
+        && data.lecture_done is bool
+        && data.task_completed is bool
+        && data.new_message is bool
+        && data.new_question is bool
+        && data.new_surprise is bool
+        && data.new_day is bool
+        && data.camp_ending is bool
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPushSubscription(data, userId, subId) {
+      return data.keys().hasAll([
+          'id', 'uid', 'endpoint', 'p256dh', 'auth', 'platform', 'installMode',
+          'deviceLabel', 'active', 'createdAt', 'updatedAt', 'lastUsedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'uid', 'endpoint', 'p256dh', 'auth', 'platform', 'installMode',
+          'deviceLabel', 'active', 'createdAt', 'updatedAt', 'lastUsedAt'
+        ])
+        && isValidId(data.id) && data.id == subId
+        && isValidId(data.uid) && data.uid == userId && data.uid == request.auth.uid
+        && data.endpoint is string && data.endpoint.size() >= 16 && data.endpoint.size() <= 1500
+        && data.p256dh is string && data.p256dh.size() >= 20 && data.p256dh.size() <= 256
+        && data.auth is string && data.auth.size() >= 10 && data.auth.size() <= 128
+        && data.platform in ['android', 'ios', 'desktop', 'web']
+        && data.installMode in ['pwa', 'browser']
+        && data.deviceLabel is string && data.deviceLabel.size() <= 80
+        && data.active is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp
+        && data.lastUsedAt is timestamp;
+    }
+
+    function isValidAdminBroadcastNotification(data, notifId) {
+      return data.keys().hasAll([
+          'id', 'createdByUid', 'title', 'body', 'imageUrl', 'targetRoute',
+          'recipientCount', 'targetedDevicesCount', 'acceptedCount', 'failedCount',
+          'staleRemovedCount', 'openedCount', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'createdByUid', 'title', 'body', 'imageUrl', 'targetRoute',
+          'recipientCount', 'targetedDevicesCount', 'acceptedCount', 'failedCount',
+          'staleRemovedCount', 'openedCount', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id) && data.id == notifId
+        && isValidId(data.createdByUid)
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 120
+        && data.body is string && data.body.size() >= 1 && data.body.size() <= 500
+        && data.imageUrl is string && data.imageUrl.size() <= 180000
+        && data.targetRoute in ['home', 'azkar', 'exams', 'leaderboard', 'little_question', 'settings', 'notification_view']
+        && data.recipientCount is int && data.recipientCount >= 0
+        && data.targetedDevicesCount is int && data.targetedDevicesCount >= 0
+        && data.acceptedCount is int && data.acceptedCount >= 0
+        && data.failedCount is int && data.failedCount >= 0
+        && data.staleRemovedCount is int && data.staleRemovedCount >= 0
+        && data.openedCount is int && data.openedCount >= 0
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidBroadcastDelivery(data, notifId, deliveryId) {
+      return data.keys().hasAll(['id', 'notificationId', 'uid', 'subscriptionId', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'notificationId', 'uid', 'subscriptionId', 'status', 'createdAt', 'updatedAt'])
+        && isValidId(data.id) && data.id == deliveryId
+        && isValidId(data.notificationId) && data.notificationId == notifId
+        && isValidId(data.uid) && data.uid == request.auth.uid
+        && isValidId(data.subscriptionId)
+        && data.status in ['delivered', 'opened']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // --- Collection Rules ---
+
+    // 1. User Profiles (strictly owner-only, plus verified security-answer recovery match)
+    match /userProfiles/{userId} {
+      allow get: if isAdmin()
+        || (isSignedIn() && isValidId(userId) && request.auth.uid == userId)
+        || (isValidId(userId) && isVerifiedRecoveryOwnerForPhone(resource.data.phone));
+      allow list: if isAdmin();
+      allow create: if isVerifiedOrPhoneStudent()
+        && isValidId(userId)
+        && request.auth.uid == userId
+        && isValidUserProfile(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedOrPhoneStudent()
+        && isValidId(userId)
+        && request.auth.uid == userId
+        && isValidUserProfile(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'avatarUrl', 'campId', 'email', 'phone', 'groupCampId', 'updatedAt']);
+      allow delete: if isAdmin()
+        || (isVerifiedOrPhoneStudent() && isValidId(userId) && request.auth.uid == userId)
+        || (isValidId(userId) && isVerifiedRecoveryOwnerForPhone(existing().phone));
+
+      // 1c. Permanent Preserved Exam History across Group Camps
+      match /examHistory/{historyId} {
+        allow get: if isAdmin()
+          || (isSignedIn() && isValidId(userId) && request.auth.uid == userId)
+          || (
+            isStudentPhoneEmailUser()
+            && isValidId(userId)
+            && exists(/databases/$(database)/documents/userProfiles/$(userId))
+            && isVerifiedRecoveryOwnerForPhone(get(/databases/$(database)/documents/userProfiles/$(userId)).data.phone)
+          );
+        allow list: if isAdmin()
+          || (isSignedIn() && isValidId(userId) && request.auth.uid == userId)
+          || (
+            isStudentPhoneEmailUser()
+            && isValidId(userId)
+            && exists(/databases/$(database)/documents/userProfiles/$(userId))
+            && isVerifiedRecoveryOwnerForPhone(get(/databases/$(database)/documents/userProfiles/$(userId)).data.phone)
+          );
+        allow create: if isVerifiedOrPhoneStudent()
+          && isValidId(userId)
+          && isValidId(historyId)
+          && request.auth.uid == userId
+          && incoming().keys().hasAll([
+            'id', 'uid', 'campId', 'campName', 'examId', 'examTitle', 'subject',
+            'attemptNumber', 'status', 'score', 'maxScore', 'percentage',
+            'correctCount', 'totalQuestions', 'resultsReleaseAtMs', 'submittedAtMs', 'createdAt'
+          ])
+          && incoming().keys().hasOnly([
+            'id', 'uid', 'campId', 'campName', 'examId', 'examTitle', 'subject',
+            'attemptNumber', 'status', 'score', 'maxScore', 'percentage',
+            'correctCount', 'totalQuestions', 'resultsReleaseAtMs', 'submittedAtMs', 'createdAt'
+          ])
+          && incoming().id == historyId
+          && incoming().uid == userId
+          && isValidId(incoming().campId)
+          && isValidId(incoming().examId)
+          && incoming().campName is string && incoming().campName.size() >= 1 && incoming().campName.size() <= 80
+          && incoming().examTitle is string && incoming().examTitle.size() >= 1 && incoming().examTitle.size() <= 120
+          && incoming().subject is string && incoming().subject.size() >= 1 && incoming().subject.size() <= 60
+          && incoming().attemptNumber is int && incoming().attemptNumber >= 1 && incoming().attemptNumber <= 10
+          && incoming().status in ['in_progress', 'submitted', 'timed_out']
+          && incoming().score is number && incoming().score >= 0
+          && incoming().maxScore is number && incoming().maxScore >= 0
+          && incoming().percentage is number && incoming().percentage >= 0 && incoming().percentage <= 100
+          && incoming().correctCount is int && incoming().correctCount >= 0
+          && incoming().totalQuestions is int && incoming().totalQuestions >= 0
+          && incoming().resultsReleaseAtMs is int
+          && incoming().submittedAtMs is int
+          && incoming().createdAt == request.time;
+        allow update: if false;
+        allow delete: if isAdmin() || (
+          isVerifiedOrPhoneStudent()
+          && isValidId(userId)
+          && request.auth.uid == userId
+          && !exists(/databases/$(database)/documents/userProfiles/$(userId))
+        ) || (
+          isStudentPhoneEmailUser()
+          && isValidId(userId)
+          && exists(/databases/$(database)/documents/userProfiles/$(userId))
+          && isVerifiedRecoveryOwnerForPhone(get(/databases/$(database)/documents/userProfiles/$(userId)).data.phone)
+        );
+      }
+
+      // 1a. Owner-only FCM Web Push Device Tokens
+      match /fcmTokens/{tokenId} {
+        allow get: if isSignedIn() && isValidId(userId) && isValidId(tokenId) && request.auth.uid == userId;
+        allow list: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+        allow create: if isVerifiedOrPhoneStudent()
+          && isValidId(userId)
+          && isValidId(tokenId)
+          && request.auth.uid == userId
+          && isValidFcmToken(incoming(), userId, tokenId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && incoming().lastUsedAt == request.time;
+        allow update: if isVerifiedOrPhoneStudent()
+          && isValidId(userId)
+          && isValidId(tokenId)
+          && request.auth.uid == userId
+          && isValidFcmToken(incoming(), userId, tokenId)
+          && incoming().id == existing().id
+          && incoming().uid == existing().uid
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().lastUsedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['campId', 'token', 'deviceLabel', 'active', 'updatedAt', 'lastUsedAt']);
+        allow delete: if isVerifiedOrPhoneStudent() && isValidId(userId) && isValidId(tokenId) && request.auth.uid == userId;
+      }
+
+      // 1b. Owner-only Notification Preferences (doc id == 'notifications'; admin-readable for broadcast eligibility)
+      match /preferences/{prefId} {
+        allow get: if isAdmin() || (isSignedIn() && isValidId(userId) && prefId == 'notifications' && request.auth.uid == userId);
+        allow list: if isAdmin();
+        allow create: if isVerifiedOrPhoneStudent()
+          && isValidId(userId)
+          && prefId == 'notifications'
+          && request.auth.uid == userId
+          && isValidNotificationPreferences(incoming(), userId)
+          && incoming().updatedAt == request.time;
+        allow update: if isVerifiedOrPhoneStudent()
+          && isValidId(userId)
+          && prefId == 'notifications'
+          && request.auth.uid == userId
+          && isValidNotificationPreferences(incoming(), userId)
+          && incoming().uid == existing().uid
+          && incoming().updatedAt == request.time;
+        allow delete: if isVerifiedOrPhoneStudent() && isValidId(userId) && prefId == 'notifications' && request.auth.uid == userId;
+      }
+
+      // 1d. Standard W3C Web Push Subscriptions (owner write/delete, admin readable and stale-cleanable)
+      match /pushSubscriptions/{subId} {
+        allow get: if isAdmin() || (isSignedIn() && isValidId(userId) && isValidId(subId) && request.auth.uid == userId);
+        allow list: if isAdmin() || (isSignedIn() && isValidId(userId) && request.auth.uid == userId);
+        allow create: if isVerifiedOrPhoneStudent()
+          && isValidId(userId)
+          && isValidId(subId)
+          && request.auth.uid == userId
+          && isValidPushSubscription(incoming(), userId, subId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && incoming().lastUsedAt == request.time;
+        allow update: if isVerifiedOrPhoneStudent()
+          && isValidId(userId)
+          && isValidId(subId)
+          && request.auth.uid == userId
+          && isValidPushSubscription(incoming(), userId, subId)
+          && incoming().id == existing().id
+          && incoming().uid == existing().uid
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().lastUsedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'endpoint', 'p256dh', 'auth', 'platform', 'installMode',
+            'deviceLabel', 'active', 'updatedAt', 'lastUsedAt'
+          ]);
+        allow delete: if isAdmin() || (isVerifiedOrPhoneStudent() && isValidId(userId) && isValidId(subId) && request.auth.uid == userId);
+      }
+    }
+
+    // 2. Invite Codes (get-only by exact code; no listing)
+    match /inviteCodes/{code} {
+      allow get: if isSignedIn() && isValidInviteCodeStr(code);
+      allow list: if false;
+      allow create: if isVerifiedOrPhoneStudent()
+        && isValidInviteCodeStr(code)
+        && isValidInviteCodeDoc(incoming())
+        && incoming().code == code
+        && incoming().ownerUid == request.auth.uid
+        && incoming().isFull == false
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && existsAfter(/databases/$(database)/documents/camps/$(incoming().campId))
+        && getAfter(/databases/$(database)/documents/camps/$(incoming().campId)).data.ownerUid == request.auth.uid;
+      allow update: if isVerifiedOrPhoneStudent()
+        && isValidInviteCodeStr(code)
+        && isValidInviteCodeDoc(incoming())
+        && existing().isFull == false
+        && incoming().isFull == true
+        && incoming().code == existing().code
+        && incoming().campId == existing().campId
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().campName == existing().campName
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['isFull', 'updatedAt'])
+        && getAfter(/databases/$(database)/documents/camps/$(existing().campId)).data.member2Uid == request.auth.uid;
+      allow delete: if isVerifiedOrPhoneStudent() && isValidInviteCodeStr(code) && existing().ownerUid == request.auth.uid;
+    }
+
+    // 3. Study Camps (strict 2-member max)
+    match /camps/{campId} {
+      allow get: if isAdmin() || (isSignedIn() && isValidId(campId) && (
+        resource == null ||
+        existing().member1Uid == request.auth.uid ||
+        (existing().member2Uid != '' && existing().member2Uid == request.auth.uid) ||
+        (existing().memberCount == 1 && existing().member2Uid == '')
+      ));
+      allow list: if isAdmin() || (isSignedIn() && (
+        resource.data.member1Uid == request.auth.uid ||
+        resource.data.member2Uid == request.auth.uid
+      ));
+      allow create: if isVerifiedOrPhoneStudent()
+        && isValidId(campId)
+        && isValidCamp(incoming())
+        && incoming().id == campId
+        && incoming().ownerUid == request.auth.uid
+        && incoming().member1Uid == request.auth.uid
+        && incoming().member2Uid == ''
+        && incoming().memberCount == 1
+        && incoming().status == 'waiting'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && existsAfter(/databases/$(database)/documents/inviteCodes/$(incoming().inviteCode));
+      allow update: if isVerifiedOrPhoneStudent()
+        && isValidId(campId)
+        && isValidCamp(incoming())
+        && incoming().id == existing().id
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().member1Uid == existing().member1Uid
+        && incoming().inviteCode == existing().inviteCode
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Action 1: Second student joins an open camp
+          (
+            existing().memberCount == 1
+            && existing().member2Uid == ''
+            && request.auth.uid != existing().member1Uid
+            && incoming().member2Uid == request.auth.uid
+            && incoming().memberCount == 2
+            && incoming().status == 'active'
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'member2Uid', 'member2Name', 'member2Avatar',
+              'member2LastActivity', 'member2LastActiveAt',
+              'memberCount', 'status', 'updatedAt'
+            ])
+          ) ||
+          // Action 2: Student 1 updates own activity/profile/study minutes
+          (
+            request.auth.uid == existing().member1Uid
+            && incoming().member2Uid == existing().member2Uid
+            && incoming().memberCount == existing().memberCount
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'member1Name', 'member1Avatar', 'member1LastActivity',
+              'member1LastActiveAt', 'member1StudyMinutes', 'updatedAt'
+            ])
+          ) ||
+          // Action 3: Student 2 updates own activity/profile/study minutes
+          (
+            existing().member2Uid != ''
+            && request.auth.uid == existing().member2Uid
+            && incoming().member2Uid == existing().member2Uid
+            && incoming().memberCount == existing().memberCount
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'member2Name', 'member2Avatar', 'member2LastActivity',
+              'member2LastActiveAt', 'member2StudyMinutes', 'updatedAt'
+            ])
+          ) ||
+          // Action 4: Camp owner updates camp name, startDate, or status
+          (
+            request.auth.uid == existing().ownerUid
+            && incoming().member2Uid == existing().member2Uid
+            && incoming().memberCount == existing().memberCount
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'name', 'startDate', 'status', 'updatedAt'
+            ])
+          ) ||
+          // Action 5: Either camp member updates the dashboard camp hero image
+          (
+            (
+              request.auth.uid == existing().member1Uid ||
+              (existing().member2Uid != '' && request.auth.uid == existing().member2Uid)
+            )
+            && incoming().member2Uid == existing().member2Uid
+            && incoming().memberCount == existing().memberCount
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'heroImageUrl', 'updatedAt'
+            ])
+          ) ||
+          // Action 6: Student 2 vacates slot 2 cleanly when deleting account
+          (
+            existing().memberCount == 2
+            && existing().member2Uid == request.auth.uid
+            && incoming().member2Uid == ''
+            && incoming().member2Name == ''
+            && incoming().member2Avatar == ''
+            && incoming().member2LastActivity == ''
+            && incoming().member2StudyMinutes == 0
+            && incoming().memberCount == 1
+            && incoming().status == 'waiting'
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'member2Uid', 'member2Name', 'member2Avatar',
+              'member2LastActivity', 'member2LastActiveAt', 'member2StudyMinutes',
+              'memberCount', 'status', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isAdmin() || (isVerifiedOrPhoneStudent() && isValidId(campId) && existing().ownerUid == request.auth.uid);
+
+      // 4. Tasks Subcollection (Dual Completion Isolation + Owner Governance)
+      match /tasks/{taskId} {
+        allow get: if isValidId(campId) && isValidId(taskId) && isCampMember(campId);
+        allow list: if isValidId(campId) && isCampMember(campId);
+        allow create: if isVerifiedOrPhoneStudent()
+          && isValidId(campId)
+          && isValidId(taskId)
+          && isValidCampTask(incoming(), campId, taskId)
+          && incoming().createdBy == request.auth.uid
+          && incoming().member1Done == false
+          && incoming().member1DoneAtMs == 0
+          && incoming().member2Done == false
+          && incoming().member2DoneAtMs == 0
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && isCampOwner(campId);
+        allow update: if isVerifiedOrPhoneStudent()
+          && isValidId(campId)
+          && isValidId(taskId)
+          && isValidCampTask(incoming(), campId, taskId)
+          && incoming().id == existing().id
+          && incoming().campId == existing().campId
+          && incoming().createdBy == existing().createdBy
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && isCampMember(campId)
+          && (
+            // Action 1: Student 1 toggles ONLY member1Done
+            (
+              getCamp(campId).member1Uid == request.auth.uid
+              && incoming().member2Done == existing().member2Done
+              && incoming().member2DoneAtMs == existing().member2DoneAtMs
+              && incoming().diff(existing()).affectedKeys().hasOnly(['member1Done', 'member1DoneAtMs', 'updatedAt'])
+            ) ||
+            // Action 2: Student 2 toggles ONLY member2Done
+            (
+              getCamp(campId).member2Uid == request.auth.uid
+              && incoming().member1Done == existing().member1Done
+              && incoming().member1DoneAtMs == existing().member1DoneAtMs
+              && incoming().diff(existing()).affectedKeys().hasOnly(['member2Done', 'member2DoneAtMs', 'updatedAt'])
+            ) ||
+            // Action 3: Camp owner edits task details (never touching completion flags)
+            (
+              getCamp(campId).ownerUid == request.auth.uid
+              && incoming().member1Done == existing().member1Done
+              && incoming().member1DoneAtMs == existing().member1DoneAtMs
+              && incoming().member2Done == existing().member2Done
+              && incoming().member2DoneAtMs == existing().member2DoneAtMs
+              && incoming().diff(existing()).affectedKeys().hasOnly([
+                'day', 'subject', 'taskType', 'customTypeLabel', 'title', 'notes', 'bgImageUrl', 'updatedAt'
+              ])
+            ) ||
+            // Action 4: Camp member updates only the task card background image
+            (
+              incoming().member1Done == existing().member1Done
+              && incoming().member1DoneAtMs == existing().member1DoneAtMs
+              && incoming().member2Done == existing().member2Done
+              && incoming().member2DoneAtMs == existing().member2DoneAtMs
+              && incoming().diff(existing()).affectedKeys().hasOnly(['bgImageUrl', 'updatedAt'])
+            )
+          );
+        allow delete: if isVerifiedOrPhoneStudent() && isValidId(campId) && isValidId(taskId) && isCampOwner(campId);
+      }
+
+      // 5. Messages Subcollection (Strictly camp members; supports inline replies & partner reactions)
+      match /messages/{messageId} {
+        allow get: if isValidId(campId) && isValidId(messageId) && isCampMember(campId);
+        allow list: if isValidId(campId) && isCampMember(campId);
+        allow create: if isVerifiedOrPhoneStudent()
+          && isValidId(campId)
+          && isValidId(messageId)
+          && isValidCampMessage(incoming(), campId, messageId)
+          && incoming().senderUid == request.auth.uid
+          && (!('partnerReaction' in incoming().keys()) || incoming().partnerReaction == '')
+          && (!('parentMessageId' in incoming().keys()) || incoming().parentMessageId == '' || (
+            incoming().isBanner == false
+            && exists(/databases/$(database)/documents/camps/$(campId)/messages/$(incoming().parentMessageId))
+          ))
+          && incoming().createdAt == request.time
+          && (!('updatedAt' in incoming().keys()) || incoming().updatedAt == request.time)
+          && isCampMember(campId);
+        allow update: if isVerifiedOrPhoneStudent()
+          && isValidId(campId)
+          && isValidId(messageId)
+          && isValidCampMessage(incoming(), campId, messageId)
+          && incoming().id == existing().id
+          && incoming().campId == existing().campId
+          && incoming().senderUid == existing().senderUid
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && existing().senderUid != request.auth.uid
+          && incoming().diff(existing()).affectedKeys().hasOnly(['partnerReaction', 'updatedAt'])
+          && isCampMember(campId);
+        allow delete: if isVerifiedOrPhoneStudent()
+          && isValidId(campId)
+          && isValidId(messageId)
+          && isCampMember(campId)
+          && existing().senderUid == request.auth.uid;
+      }
+
+      // 6. Surprises Subcollection
+      match /surprises/{surpriseId} {
+        allow get: if isValidId(campId) && isValidId(surpriseId) && isCampMember(campId);
+        allow list: if isValidId(campId) && isCampMember(campId);
+        allow create: if isVerifiedOrPhoneStudent()
+          && isValidId(campId)
+          && isValidId(surpriseId)
+          && isValidCampSurprise(incoming(), campId, surpriseId)
+          && incoming().senderUid == request.auth.uid
+          && incoming().opened == false
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && isCampMember(campId);
+        allow update: if isVerifiedOrPhoneStudent()
+          && isValidId(campId)
+          && isValidId(surpriseId)
+          && isValidCampSurprise(incoming(), campId, surpriseId)
+          && incoming().id == existing().id
+          && incoming().campId == existing().campId
+          && incoming().senderUid == existing().senderUid
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && existing().senderUid != request.auth.uid
+          && incoming().opened == true
+          && incoming().diff(existing()).affectedKeys().hasOnly(['opened', 'updatedAt'])
+          && isCampMember(campId);
+        allow delete: if isVerifiedOrPhoneStudent()
+          && isValidId(campId)
+          && isValidId(surpriseId)
+          && isCampMember(campId)
+          && existing().senderUid == request.auth.uid;
+      }
+
+      // 7. Study Sessions Subcollection
+      match /studySessions/{sessionId} {
+        allow get: if isValidId(campId) && isValidId(sessionId) && isCampMember(campId);
+        allow list: if isValidId(campId) && isCampMember(campId);
+        allow create: if isVerifiedOrPhoneStudent()
+          && isValidId(campId)
+          && isValidId(sessionId)
+          && isValidStudySession(incoming(), campId, sessionId)
+          && incoming().createdAt == request.time
+          && isCampMember(campId);
+        allow update: if false;
+        allow delete: if false;
+      }
+
+      // 8. Notifications Subcollection
+      match /notifications/{notificationId} {
+        allow get: if isValidId(campId) && isValidId(notificationId) && isCampMember(campId);
+        allow list: if isValidId(campId) && isCampMember(campId);
+        allow create: if isVerifiedOrPhoneStudent()
+          && isValidId(campId)
+          && isValidId(notificationId)
+          && isValidCampNotification(incoming(), campId, notificationId)
+          && incoming().actorUid == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && isCampMember(campId);
+        allow update: if isVerifiedOrPhoneStudent()
+          && isValidId(campId)
+          && isValidId(notificationId)
+          && isValidCampNotification(incoming(), campId, notificationId)
+          && incoming().id == existing().id
+          && incoming().campId == existing().campId
+          && incoming().actorUid == existing().actorUid
+          && incoming().targetUid == existing().targetUid
+          && incoming().type == existing().type
+          && incoming().title == existing().title
+          && incoming().body == existing().body
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['readBy', 'updatedAt'])
+          && isCampMember(campId);
+        allow delete: if false;
+      }
+
+      // 9. Little Questions Subcollection (سؤال صغنن — photo/text questions, replies & reactions)
+      match /littleQuestions/{questionId} {
+        allow get: if isValidId(campId) && isValidId(questionId) && isCampMember(campId);
+        allow list: if isValidId(campId) && isCampMember(campId);
+        allow create: if isVerifiedOrPhoneStudent()
+          && isValidId(campId)
+          && isValidId(questionId)
+          && isValidLittleQuestion(incoming(), campId, questionId)
+          && incoming().senderUid == request.auth.uid
+          && (!('partnerReaction' in incoming().keys()) || incoming().partnerReaction == '')
+          && (!('parentQuestionId' in incoming().keys()) || incoming().parentQuestionId == '' || (
+            exists(/databases/$(database)/documents/camps/$(campId)/littleQuestions/$(incoming().parentQuestionId))
+          ))
+          && incoming().createdAt == request.time
+          && (!('updatedAt' in incoming().keys()) || incoming().updatedAt == request.time)
+          && isCampMember(campId);
+        allow update: if isVerifiedOrPhoneStudent()
+          && isValidId(campId)
+          && isValidId(questionId)
+          && isValidLittleQuestion(incoming(), campId, questionId)
+          && incoming().id == existing().id
+          && incoming().campId == existing().campId
+          && incoming().senderUid == existing().senderUid
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && existing().senderUid != request.auth.uid
+          && incoming().diff(existing()).affectedKeys().hasOnly(['partnerReaction', 'updatedAt'])
+          && isCampMember(campId);
+        allow delete: if isVerifiedOrPhoneStudent()
+          && isValidId(campId)
+          && isValidId(questionId)
+          && isCampMember(campId)
+          && existing().senderUid == request.auth.uid;
+      }
+    }
+
+    // Visitor logs
+    function isValidVisitor(data, visitId) {
+      return data.keys().hasAll(['id', 'timestamp', 'userEmail', 'userName', 'userAgent', 'screen'])
+        && data.keys().hasOnly(['id', 'timestamp', 'userEmail', 'userName', 'userAgent', 'screen'])
+        && isValidId(data.id) && data.id == visitId
+        && data.timestamp == request.time
+        && data.userEmail is string && data.userEmail.size() <= 120
+        && data.userName is string && data.userName.size() <= 80
+        && data.userAgent is string && data.userAgent.size() <= 240
+        && data.screen is string && data.screen.size() <= 32;
+    }
+
+    match /visitors/{visitId} {
+      allow get, list: if isAdmin();
+      allow create: if isValidId(visitId) && isValidVisitor(incoming(), visitId);
+      allow update, delete: if false;
+    }
+
+    // ============================================================
+    // Group Camps System (Up to 50 students per camp + Competitive Exams)
+    // ============================================================
+
+    function groupCampExists(campId) {
+      return exists(/databases/$(database)/documents/groupCamps/$(campId));
+    }
+
+    function getGroupCamp(campId) {
+      return get(/databases/$(database)/documents/groupCamps/$(campId)).data;
+    }
+
+    function isGroupCampCreator(campId) {
+      return isVerifiedOrPhoneStudent() && isValidId(campId) && groupCampExists(campId) && getGroupCamp(campId).createdByUid == request.auth.uid;
+    }
+
+    function isGroupCampMember(campId) {
+      return isSignedIn() && isValidId(campId) && exists(/databases/$(database)/documents/groupCamps/$(campId)/members/$(request.auth.uid));
+    }
+
+    function isGroupExamPublisher(campId) {
+      return isVerifiedOrPhoneStudent()
+        && isValidId(campId)
+        && isGroupCampMember(campId)
+        && exists(/databases/$(database)/documents/groupCamps/$(campId)/examPublishers/$(request.auth.uid));
+    }
+
+    function getGroupExam(campId, examId) {
+      return get(/databases/$(database)/documents/groupCamps/$(campId)/exams/$(examId)).data;
+    }
+
+    function isValidGroupInviteCode(data, code) {
+      return data.keys().hasAll(['code', 'campId', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['code', 'campId', 'createdAt', 'updatedAt'])
+        && isValidInviteCodeStr(data.code) && data.code == code
+        && isValidId(data.campId)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidGroupCamp(data, campId) {
+      return data.keys().hasAll([
+          'id', 'name', 'description', 'coverImageUrl', 'coverStoragePath',
+          'maxMembers', 'memberCount', 'inviteCode', 'status', 'createdByUid', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'name', 'description', 'coverImageUrl', 'coverStoragePath',
+          'maxMembers', 'memberCount', 'inviteCode', 'status', 'createdByUid', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id) && data.id == campId
+        && data.name is string && data.name.size() >= 2 && data.name.size() <= 80
+        && data.description is string && data.description.size() <= 500
+        && data.coverImageUrl is string && data.coverImageUrl.size() <= 180000
+        && data.coverStoragePath is string && data.coverStoragePath.size() <= 300
+        && data.maxMembers is int && data.maxMembers >= 1 && data.maxMembers <= 50
+        && data.memberCount is int && data.memberCount >= 0 && data.memberCount <= data.maxMembers
+        && isValidInviteCodeStr(data.inviteCode)
+        && data.status in ['open', 'closed']
+        && isValidId(data.createdByUid)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidGroupCampMember(data, campId, uid) {
+      return data.keys().hasAll([
+          'uid', 'campId', 'displayName', 'avatarUrl',
+          'totalScore', 'examsTakenCount', 'totalCorrectAnswers', 'totalQuestionsAnswered',
+          'completionPercent', 'lastExamScore', 'joinedAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid', 'campId', 'displayName', 'avatarUrl',
+          'totalScore', 'examsTakenCount', 'totalCorrectAnswers', 'totalQuestionsAnswered',
+          'completionPercent', 'lastExamScore', 'joinedAt', 'updatedAt'
+        ])
+        && isValidId(data.uid) && data.uid == uid
+        && isValidId(data.campId) && data.campId == campId
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 50
+        && data.avatarUrl is string && data.avatarUrl.size() <= 40000
+        && data.totalScore is number && data.totalScore >= 0
+        && data.examsTakenCount is int && data.examsTakenCount >= 0
+        && data.totalCorrectAnswers is int && data.totalCorrectAnswers >= 0
+        && data.totalQuestionsAnswered is int && data.totalQuestionsAnswered >= 0
+        && data.completionPercent is number && data.completionPercent >= 0 && data.completionPercent <= 100
+        && data.lastExamScore is number && data.lastExamScore >= 0
+        && data.joinedAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidGroupExam(data, campId, examId) {
+      return data.keys().hasAll([
+          'id', 'campId', 'title', 'subject', 'unit', 'description', 'instructions',
+          'durationMinutes', 'totalScore', 'questionsCount', 'startsAtMs', 'endsAtMs',
+          'maxAttempts', 'resultsReleaseAtMs', 'allowReviewAfterSubmit', 'status',
+          'attemptsStartedCount', 'createdByUid', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'campId', 'title', 'subject', 'unit', 'description', 'instructions',
+          'durationMinutes', 'totalScore', 'questionsCount', 'startsAtMs', 'endsAtMs',
+          'maxAttempts', 'resultsReleaseAtMs', 'allowReviewAfterSubmit', 'status',
+          'attemptsStartedCount', 'createdByUid', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id) && data.id == examId
+        && isValidId(data.campId) && data.campId == campId
+        && data.title is string && data.title.size() >= 2 && data.title.size() <= 120
+        && data.subject is string && data.subject.size() >= 1 && data.subject.size() <= 60
+        && data.unit is string && data.unit.size() <= 80
+        && data.description is string && data.description.size() <= 1000
+        && data.instructions is string && data.instructions.size() <= 2000
+        && data.durationMinutes is int && data.durationMinutes >= 1 && data.durationMinutes <= 360
+        && data.totalScore is number && data.totalScore >= 0
+        && data.questionsCount is int && data.questionsCount >= 0 && data.questionsCount <= 150
+        && data.startsAtMs is int
+        && data.endsAtMs is int && data.endsAtMs > data.startsAtMs
+        && data.maxAttempts is int && data.maxAttempts >= 1 && data.maxAttempts <= 10
+        && data.resultsReleaseAtMs is int
+        && data.allowReviewAfterSubmit is bool
+        && data.status in ['draft', 'published']
+        && data.attemptsStartedCount is int && data.attemptsStartedCount >= 0
+        && isValidId(data.createdByUid)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidGroupExamQuestion(data, campId, examId, questionId) {
+      return data.keys().hasAll([
+          'id', 'examId', 'campId', 'order', 'type', 'promptText', 'imageUrl',
+          'imageStoragePath', 'options', 'correctOptionIndex', 'score', 'explanation', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'examId', 'campId', 'order', 'type', 'promptText', 'imageUrl',
+          'imageStoragePath', 'options', 'correctOptionIndex', 'score', 'explanation', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id) && data.id == questionId
+        && isValidId(data.examId) && data.examId == examId
+        && isValidId(data.campId) && data.campId == campId
+        && data.order is int && data.order >= 0 && data.order <= 200
+        && data.type in ['mcq', 'image_mcq', 'true_false', 'scientific_mcq']
+        && data.promptText is string && data.promptText.size() <= 2000
+        && data.imageUrl is string && data.imageUrl.size() <= 220000
+        && data.imageStoragePath is string && data.imageStoragePath.size() <= 300
+        && (data.promptText.size() >= 1 || data.imageUrl.size() >= 1)
+        && data.options is list && data.options.size() >= 2 && data.options.size() <= 6
+        && data.correctOptionIndex is int && data.correctOptionIndex >= 0 && data.correctOptionIndex < data.options.size()
+        && data.score is number && data.score > 0 && data.score <= 1000
+        && data.explanation is string && data.explanation.size() <= 1000
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidGroupExamAttempt(data, campId, examId, attemptId) {
+      return data.keys().hasAll([
+          'id', 'campId', 'examId', 'uid', 'studentName', 'studentAvatar',
+          'attemptNumber', 'status', 'answers', 'startedAt', 'startedAtMs',
+          'deadlineAtMs', 'submittedAtMs', 'score', 'maxScore', 'percentage',
+          'correctCount', 'totalQuestions', 'graded', 'adminApproved', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'campId', 'examId', 'uid', 'studentName', 'studentAvatar',
+          'attemptNumber', 'status', 'answers', 'startedAt', 'startedAtMs',
+          'deadlineAtMs', 'submittedAt', 'submittedAtMs', 'score', 'maxScore', 'percentage',
+          'correctCount', 'totalQuestions', 'graded', 'adminApproved', 'updatedAt'
+        ])
+        && isValidId(data.id) && data.id == attemptId
+        && isValidId(data.campId) && data.campId == campId
+        && isValidId(data.examId) && data.examId == examId
+        && isValidId(data.uid)
+        && data.studentName is string && data.studentName.size() >= 1 && data.studentName.size() <= 50
+        && data.studentAvatar is string && data.studentAvatar.size() <= 40000
+        && data.attemptNumber is int && data.attemptNumber >= 1 && data.attemptNumber <= 10
+        && data.status in ['in_progress', 'submitted', 'timed_out']
+        && data.answers is map && data.answers.size() <= 160
+        && data.startedAt is timestamp
+        && data.startedAtMs is int
+        && data.deadlineAtMs is int
+        && (!('submittedAt' in data.keys()) || data.submittedAt is timestamp)
+        && data.submittedAtMs is int
+        && data.score is number && data.score >= 0
+        && data.maxScore is number && data.maxScore >= 0
+        && data.percentage is number && data.percentage >= 0 && data.percentage <= 100
+        && data.correctCount is int && data.correctCount >= 0
+        && data.totalQuestions is int && data.totalQuestions >= 0
+        && data.graded is bool
+        && data.adminApproved is bool
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidGroupLittleQuestion(data, campId, questionId) {
+      return data.keys().hasAll([
+          'id', 'campId', 'senderUid', 'senderName', 'senderAvatar',
+          'crystalStyle', 'content', 'imageUrl', 'parentQuestionId',
+          'partnerReaction', 'reactions', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'campId', 'senderUid', 'senderName', 'senderAvatar',
+          'crystalStyle', 'content', 'imageUrl', 'parentQuestionId',
+          'partnerReaction', 'reactions', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id) && data.id == questionId
+        && isValidId(data.campId) && data.campId == campId
+        && isValidId(data.senderUid)
+        && data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 50
+        && data.senderAvatar is string && data.senderAvatar.size() <= 40000
+        && data.crystalStyle in ['toty_sapphire', 'rose_quartz', 'starlight_gold', 'aurora_amethyst']
+        && data.content is string && data.content.size() <= 1000
+        && data.imageUrl is string && data.imageUrl.size() <= 90000
+        && (data.content.size() >= 1 || data.imageUrl.size() >= 1)
+        && data.parentQuestionId is string && data.parentQuestionId.size() <= 128
+        && (data.parentQuestionId == '' || (isValidId(data.parentQuestionId) && data.parentQuestionId != questionId))
+        && data.partnerReaction is string && data.partnerReaction.size() <= 32
+        && data.reactions is map && data.reactions.size() <= 55
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidGroupExamPublisher(data, campId, uid) {
+      return data.keys().hasAll(['uid', 'campId', 'accessProof', 'grantedAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'campId', 'accessProof', 'grantedAt', 'updatedAt'])
+        && isValidId(data.uid) && data.uid == uid
+        && isValidId(data.campId) && data.campId == campId
+        && data.accessProof is string && data.accessProof.size() == 64
+        && hashing.sha256(('firestore_salt:' + data.accessProof).toUtf8()).toHexString().upper() == '575996B2D1248D69146F49FBDB645CB36A10B6DD1710FC6799ED9A5E9F86DAF6'
+        && data.grantedAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Group Invite Codes (lookup by exact code; admin or camp creator creates atomically)
+    match /groupInviteCodes/{code} {
+      allow get: if isSignedIn() && isValidInviteCodeStr(code);
+      allow list: if isAdmin();
+      allow create: if isVerifiedOrPhoneStudent()
+        && isValidInviteCodeStr(code)
+        && isValidGroupInviteCode(incoming(), code)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (
+            existsAfter(/databases/$(database)/documents/groupCamps/$(incoming().campId))
+            && getAfter(/databases/$(database)/documents/groupCamps/$(incoming().campId)).data.createdByUid == request.auth.uid
+          )
+        );
+      allow update: if isAdmin()
+        && isValidInviteCodeStr(code)
+        && isValidGroupInviteCode(incoming(), code)
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+      allow delete: if (isAdmin() || (isVerifiedOrPhoneStudent() && isGroupCampCreator(existing().campId))) && isValidInviteCodeStr(code);
+    }
+
+    // Group Camps (max 50 members, atomic create/join/leave/switch)
+    match /groupCamps/{campId} {
+      allow get: if isAdmin() || (isSignedIn() && isValidId(campId));
+      allow list: if isAdmin();
+      allow create: if isVerifiedOrPhoneStudent()
+        && isValidId(campId)
+        && isValidGroupCamp(incoming(), campId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && existsAfter(/databases/$(database)/documents/groupInviteCodes/$(incoming().inviteCode))
+        && (
+          (isAdmin() && incoming().memberCount == 0) ||
+          (
+            incoming().createdByUid == request.auth.uid
+            && incoming().status == 'open'
+            && (
+              incoming().memberCount == 0 ||
+              (
+                incoming().memberCount == 1
+                && existsAfter(/databases/$(database)/documents/groupCamps/$(campId)/members/$(request.auth.uid))
+              )
+            )
+          )
+        );
+      allow update: if isValidId(campId)
+        && isValidGroupCamp(incoming(), campId)
+        && incoming().id == existing().id
+        && incoming().createdByUid == existing().createdByUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (
+            isGroupCampCreator(campId)
+            && incoming().memberCount == existing().memberCount
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'name', 'description', 'coverImageUrl', 'coverStoragePath', 'maxMembers', 'status', 'updatedAt'
+            ])
+          ) ||
+          (
+            isVerifiedOrPhoneStudent()
+            && incoming().diff(existing()).affectedKeys().hasOnly(['memberCount', 'updatedAt'])
+            && (
+              // Join: open camp, room available, member doc created in same atomic transaction
+              (
+                existing().status == 'open'
+                && existing().memberCount < existing().maxMembers
+                && incoming().memberCount == existing().memberCount + 1
+                && !exists(/databases/$(database)/documents/groupCamps/$(campId)/members/$(request.auth.uid))
+                && existsAfter(/databases/$(database)/documents/groupCamps/$(campId)/members/$(request.auth.uid))
+              ) ||
+              // Leave: existing member doc deleted in same atomic transaction
+              (
+                existing().memberCount > 0
+                && incoming().memberCount == existing().memberCount - 1
+                && exists(/databases/$(database)/documents/groupCamps/$(campId)/members/$(request.auth.uid))
+                && !existsAfter(/databases/$(database)/documents/groupCamps/$(campId)/members/$(request.auth.uid))
+              )
+            )
+          )
+        );
+      allow delete: if isValidId(campId) && (isAdmin() || (isGroupCampCreator(campId) && existing().memberCount == 0));
+
+      // Group Camp Members (up to 50)
+      match /members/{uid} {
+        allow get: if isAdmin()
+          || isGroupCampCreator(campId)
+          || isGroupCampMember(campId)
+          || (isSignedIn() && isValidId(campId) && isValidId(uid) && request.auth.uid == uid)
+          || (
+            isValidId(campId)
+            && isValidId(uid)
+            && exists(/databases/$(database)/documents/userProfiles/$(uid))
+            && isVerifiedRecoveryOwnerForPhone(get(/databases/$(database)/documents/userProfiles/$(uid)).data.phone)
+          );
+        allow list: if isAdmin() || isGroupCampCreator(campId) || isGroupCampMember(campId);
+        allow create: if isVerifiedOrPhoneStudent()
+          && isValidId(campId)
+          && isValidId(uid)
+          && request.auth.uid == uid
+          && isValidGroupCampMember(incoming(), campId, uid)
+          && !exists(/databases/$(database)/documents/groupCamps/$(campId)/members/$(uid))
+          && getAfter(/databases/$(database)/documents/userProfiles/$(uid)).data.groupCampId == campId
+          && incoming().updatedAt == request.time
+          && (
+            (
+              incoming().joinedAt == request.time
+              && incoming().totalScore == 0
+              && incoming().examsTakenCount == 0
+              && incoming().totalCorrectAnswers == 0
+              && incoming().totalQuestionsAnswered == 0
+              && incoming().completionPercent == 0
+              && incoming().lastExamScore == 0
+              && (
+                (
+                  !groupCampExists(campId)
+                  && existsAfter(/databases/$(database)/documents/groupCamps/$(campId))
+                  && getAfter(/databases/$(database)/documents/groupCamps/$(campId)).data.createdByUid == uid
+                  && getAfter(/databases/$(database)/documents/groupCamps/$(campId)).data.memberCount == 1
+                ) ||
+                (
+                  groupCampExists(campId)
+                  && getGroupCamp(campId).status == 'open'
+                  && getAfter(/databases/$(database)/documents/groupCamps/$(campId)).data.memberCount == getGroupCamp(campId).memberCount + 1
+                  && getAfter(/databases/$(database)/documents/groupCamps/$(campId)).data.memberCount <= getGroupCamp(campId).maxMembers
+                )
+              )
+            ) ||
+            isValidRecoveredGroupMember(campId, uid, incoming())
+          );
+        allow update: if isValidId(campId)
+          && isValidId(uid)
+          && isValidGroupCampMember(incoming(), campId, uid)
+          && incoming().uid == existing().uid
+          && incoming().campId == existing().campId
+          && incoming().joinedAt == existing().joinedAt
+          && incoming().updatedAt == request.time
+          && (
+            isAdmin() ||
+            (
+              isVerifiedOrPhoneStudent()
+              && request.auth.uid == uid
+              && isGroupCampMember(campId)
+              && (
+                incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'avatarUrl', 'updatedAt']) ||
+                (
+                  incoming().diff(existing()).affectedKeys().hasOnly([
+                    'displayName', 'avatarUrl', 'totalScore', 'examsTakenCount',
+                    'totalCorrectAnswers', 'totalQuestionsAnswered', 'completionPercent',
+                    'lastExamScore', 'updatedAt'
+                  ])
+                  && incoming().examsTakenCount >= existing().examsTakenCount
+                  && incoming().examsTakenCount <= existing().examsTakenCount + 1
+                )
+              )
+            )
+          );
+        allow delete: if isAdmin() || (
+          isVerifiedOrPhoneStudent()
+          && isValidId(campId)
+          && isValidId(uid)
+          && request.auth.uid == uid
+          && getAfter(/databases/$(database)/documents/groupCamps/$(campId)).data.memberCount == getGroupCamp(campId).memberCount - 1
+          && getAfter(/databases/$(database)/documents/userProfiles/$(uid)).data.groupCampId != campId
+        ) || (
+          isStudentPhoneEmailUser()
+          && isValidId(campId)
+          && isValidId(uid)
+          && exists(/databases/$(database)/documents/userProfiles/$(uid))
+          && isVerifiedRecoveryOwnerForPhone(get(/databases/$(database)/documents/userProfiles/$(uid)).data.phone)
+          && !existsAfter(/databases/$(database)/documents/userProfiles/$(uid))
+        );
+      }
+
+      // Group Camp Authorized Exam Publishers (private owner-get-only)
+      match /examPublishers/{uid} {
+        allow get: if isAdmin() || (isVerifiedOrPhoneStudent() && isValidId(campId) && isValidId(uid) && request.auth.uid == uid);
+        allow list: if false;
+        allow create: if isVerifiedOrPhoneStudent()
+          && isValidId(campId)
+          && isValidId(uid)
+          && request.auth.uid == uid
+          && isGroupCampMember(campId)
+          && isValidGroupExamPublisher(incoming(), campId, uid)
+          && incoming().grantedAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isVerifiedOrPhoneStudent()
+          && isValidId(campId)
+          && isValidId(uid)
+          && request.auth.uid == uid
+          && isGroupCampMember(campId)
+          && isValidGroupExamPublisher(incoming(), campId, uid)
+          && incoming().uid == existing().uid
+          && incoming().campId == existing().campId
+          && incoming().grantedAt == existing().grantedAt
+          && incoming().updatedAt == request.time;
+        allow delete: if isAdmin() || (isVerifiedOrPhoneStudent() && isValidId(campId) && isValidId(uid) && request.auth.uid == uid);
+      }
+
+      // Group Camp Competitive Exams
+      match /exams/{examId} {
+        allow get, list: if isAdmin() || isGroupCampCreator(campId) || (isGroupCampMember(campId) && resource.data.status == 'published');
+        allow create: if isValidId(campId)
+          && isValidId(examId)
+          && isValidGroupExam(incoming(), campId, examId)
+          && incoming().attemptsStartedCount == 0
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && (
+            isAdmin()
+            || isGroupCampCreator(campId)
+            || (
+              isGroupExamPublisher(campId)
+              && incoming().createdByUid == request.auth.uid
+              && incoming().status == 'published'
+            )
+          );
+        allow update: if isValidId(campId)
+          && isValidId(examId)
+          && isValidGroupExam(incoming(), campId, examId)
+          && incoming().id == existing().id
+          && incoming().campId == existing().campId
+          && incoming().createdByUid == existing().createdByUid
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && (
+            isAdmin() ||
+            isGroupCampCreator(campId) ||
+            (
+              isVerifiedOrPhoneStudent()
+              && isGroupCampMember(campId)
+              && existing().status == 'published'
+              && incoming().attemptsStartedCount == existing().attemptsStartedCount + 1
+              && incoming().diff(existing()).affectedKeys().hasOnly(['attemptsStartedCount', 'updatedAt'])
+            )
+          );
+        allow delete: if (isAdmin() || isGroupCampCreator(campId))
+          && isValidId(campId)
+          && isValidId(examId)
+          && existing().attemptsStartedCount == 0;
+
+        // Exam Questions
+        match /questions/{questionId} {
+          allow get, list: if isAdmin() || isGroupCampCreator(campId) || (isGroupCampMember(campId) && getGroupExam(campId, examId).status == 'published');
+          allow create: if isValidId(campId)
+            && isValidId(examId)
+            && isValidId(questionId)
+            && isValidGroupExamQuestion(incoming(), campId, examId, questionId)
+            && incoming().createdAt == request.time
+            && incoming().updatedAt == request.time
+            && (
+              isAdmin()
+              || isGroupCampCreator(campId)
+              || (
+                isGroupExamPublisher(campId)
+                && getAfter(/databases/$(database)/documents/groupCamps/$(campId)/exams/$(examId)).data.createdByUid == request.auth.uid
+              )
+            );
+          allow update: if (isAdmin() || isGroupCampCreator(campId))
+            && isValidId(campId)
+            && isValidId(examId)
+            && isValidId(questionId)
+            && isValidGroupExamQuestion(incoming(), campId, examId, questionId)
+            && incoming().id == existing().id
+            && incoming().examId == existing().examId
+            && incoming().campId == existing().campId
+            && incoming().createdAt == existing().createdAt
+            && incoming().updatedAt == request.time;
+          allow delete: if (isAdmin() || isGroupCampCreator(campId)) && isValidId(campId) && isValidId(examId) && isValidId(questionId);
+        }
+
+        // Student Attempts (deterministic attemptId = uid_attemptNumber)
+        match /attempts/{attemptId} {
+          allow get: if isAdmin() || isGroupCampCreator(campId) || (
+            isGroupCampMember(campId) &&
+            (resource == null || existing().uid == request.auth.uid)
+          );
+          allow list: if isAdmin() || isGroupCampCreator(campId) || (
+            isGroupCampMember(campId) &&
+            resource.data.uid == request.auth.uid
+          );
+          allow create: if isVerifiedOrPhoneStudent()
+            && isValidId(campId)
+            && isValidId(examId)
+            && isValidId(attemptId)
+            && isGroupCampMember(campId)
+            && isValidGroupExamAttempt(incoming(), campId, examId, attemptId)
+            && incoming().uid == request.auth.uid
+            && attemptId == (request.auth.uid + '_' + string(incoming().attemptNumber))
+            && incoming().attemptNumber <= getGroupExam(campId, examId).maxAttempts
+            && incoming().status == 'in_progress'
+            && getGroupExam(campId, examId).status == 'published'
+            && request.time.toMillis() >= getGroupExam(campId, examId).startsAtMs
+            && request.time.toMillis() <= getGroupExam(campId, examId).endsAtMs
+            && incoming().startedAt == request.time
+            && incoming().updatedAt == request.time;
+          allow update: if isValidId(campId)
+            && isValidId(examId)
+            && isValidId(attemptId)
+            && isValidGroupExamAttempt(incoming(), campId, examId, attemptId)
+            && incoming().id == existing().id
+            && incoming().campId == existing().campId
+            && incoming().examId == existing().examId
+            && incoming().uid == existing().uid
+            && incoming().attemptNumber == existing().attemptNumber
+            && incoming().startedAt == existing().startedAt
+            && incoming().updatedAt == request.time
+            && (
+              isAdmin() ||
+              isGroupCampCreator(campId) ||
+              (
+                isVerifiedOrPhoneStudent()
+                && isGroupCampMember(campId)
+                && existing().uid == request.auth.uid
+                && existing().status == 'in_progress'
+                && (
+                  request.time.toMillis() <= (existing().startedAt.toMillis() + (getGroupExam(campId, examId).durationMinutes * 60000) + 30000)
+                  || (
+                    incoming().status == 'timed_out'
+                    && incoming().answers == existing().answers
+                  )
+                )
+                && (!('submittedAt' in incoming().keys()) || incoming().submittedAt == request.time)
+              )
+            );
+          allow delete: if isAdmin();
+        }
+      }
+
+      // Group Camp Little Questions (سؤال صغنن — shared with all joined members in the Group Camp)
+      match /littleQuestions/{questionId} {
+        allow get: if isAdmin() || isGroupCampCreator(campId) || (isValidId(campId) && isValidId(questionId) && isGroupCampMember(campId));
+        allow list: if isAdmin() || isGroupCampCreator(campId) || (isValidId(campId) && isGroupCampMember(campId));
+        allow create: if isVerifiedOrPhoneStudent()
+          && isValidId(campId)
+          && isValidId(questionId)
+          && isValidGroupLittleQuestion(incoming(), campId, questionId)
+          && incoming().senderUid == request.auth.uid
+          && incoming().partnerReaction == ''
+          && incoming().reactions.size() == 0
+          && (
+            incoming().parentQuestionId == '' ||
+            exists(/databases/$(database)/documents/groupCamps/$(campId)/littleQuestions/$(incoming().parentQuestionId))
+          )
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && (isGroupCampMember(campId) || isGroupCampCreator(campId));
+        allow update: if isVerifiedOrPhoneStudent()
+          && isValidId(campId)
+          && isValidId(questionId)
+          && isValidGroupLittleQuestion(incoming(), campId, questionId)
+          && incoming().id == existing().id
+          && incoming().campId == existing().campId
+          && incoming().senderUid == existing().senderUid
+          && incoming().senderName == existing().senderName
+          && incoming().senderAvatar == existing().senderAvatar
+          && incoming().crystalStyle == existing().crystalStyle
+          && incoming().content == existing().content
+          && incoming().imageUrl == existing().imageUrl
+          && incoming().parentQuestionId == existing().parentQuestionId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && (isGroupCampMember(campId) || isGroupCampCreator(campId))
+          && incoming().diff(existing()).affectedKeys().hasOnly(['reactions', 'updatedAt'])
+          && incoming().reactions.diff(existing().reactions).affectedKeys().hasOnly([request.auth.uid])
+          && (
+            !(request.auth.uid in incoming().reactions.keys()) ||
+            (incoming().reactions[request.auth.uid] is string && incoming().reactions[request.auth.uid].size() >= 1 && incoming().reactions[request.auth.uid].size() <= 32)
+          );
+        allow delete: if isAdmin() || (
+          isVerifiedOrPhoneStudent()
+          && isValidId(campId)
+          && isValidId(questionId)
+          && (isGroupCampMember(campId) || isGroupCampCreator(campId))
+          && (existing().senderUid == request.auth.uid || isGroupCampCreator(campId))
+        );
+      }
+    }
+
+    // ============================================================
+    // Admin Group Broadcast Push Notifications & Delivery Receipts
+    // ============================================================
+    match /adminBroadcastNotifications/{notifId} {
+      allow get: if isAdmin() || (isSignedIn() && isValidId(notifId));
+      allow list: if isAdmin();
+      allow create: if isAdmin()
+        && isValidId(notifId)
+        && isValidAdminBroadcastNotification(incoming(), notifId)
+        && incoming().createdByUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isAdmin()
+        && isValidId(notifId)
+        && isValidAdminBroadcastNotification(incoming(), notifId)
+        && incoming().id == existing().id
+        && incoming().createdByUid == existing().createdByUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'acceptedCount', 'failedCount', 'staleRemovedCount', 'openedCount', 'updatedAt'
+        ]);
+      allow delete: if isAdmin() && isValidId(notifId);
+
+      match /deliveries/{deliveryId} {
+        allow get: if isAdmin() || (
+          isSignedIn() && isValidId(notifId) && isValidId(deliveryId)
+          && (resource == null || existing().uid == request.auth.uid)
+        );
+        allow list: if isAdmin();
+        allow create: if isVerifiedOrPhoneStudent()
+          && isValidId(notifId)
+          && isValidId(deliveryId)
+          && isValidBroadcastDelivery(incoming(), notifId, deliveryId)
+          && exists(/databases/$(database)/documents/adminBroadcastNotifications/$(notifId))
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isVerifiedOrPhoneStudent()
+          && isValidId(notifId)
+          && isValidId(deliveryId)
+          && isValidBroadcastDelivery(incoming(), notifId, deliveryId)
+          && incoming().id == existing().id
+          && incoming().notificationId == existing().notificationId
+          && incoming().uid == existing().uid
+          && incoming().subscriptionId == existing().subscriptionId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && existing().uid == request.auth.uid
+          && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
+        allow delete: if isAdmin() && isValidId(notifId) && isValidId(deliveryId);
+      }
+    }
+
+    // ============================================================
+    // Admin-Managed Religious Fact ("معلومة يمكن اول مرة تعرفها")
+    // ============================================================
+    function isValidIslamicTreasure(data, treasureId) {
+      return data.keys().hasAll([
+          'id', 'questionLead', 'factLine1', 'factLine2',
+          'evidenceText', 'evidenceRef', 'closingNote',
+          'isActive', 'createdByUid', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'questionLead', 'factLine1', 'factLine2',
+          'evidenceText', 'evidenceRef', 'closingNote',
+          'isActive', 'createdByUid', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id) && data.id == treasureId
+        && data.questionLead is string && data.questionLead.size() >= 1 && data.questionLead.size() <= 120
+        && data.factLine1 is string && data.factLine1.size() >= 1 && data.factLine1.size() <= 300
+        && data.factLine2 is string && data.factLine2.size() <= 300
+        && data.evidenceText is string && data.evidenceText.size() <= 500
+        && data.evidenceRef is string && data.evidenceRef.size() <= 120
+        && data.closingNote is string && data.closingNote.size() <= 200
+        && data.isActive is bool
+        && isValidId(data.createdByUid)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidActiveIslamicTreasure(data, docId) {
+      return data.keys().hasAll([
+          'id', 'treasureId', 'questionLead', 'factLine1', 'factLine2',
+          'evidenceText', 'evidenceRef', 'closingNote',
+          'updatedByUid', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'treasureId', 'questionLead', 'factLine1', 'factLine2',
+          'evidenceText', 'evidenceRef', 'closingNote',
+          'updatedByUid', 'updatedAt'
+        ])
+        && data.id is string && data.id == docId && docId == 'activeIslamicTreasure'
+        && isValidId(data.treasureId)
+        && data.questionLead is string && data.questionLead.size() >= 1 && data.questionLead.size() <= 120
+        && data.factLine1 is string && data.factLine1.size() >= 1 && data.factLine1.size() <= 300
+        && data.factLine2 is string && data.factLine2.size() <= 300
+        && data.evidenceText is string && data.evidenceText.size() <= 500
+        && data.evidenceRef is string && data.evidenceRef.size() <= 120
+        && data.closingNote is string && data.closingNote.size() <= 200
+        && isValidId(data.updatedByUid)
+        && data.updatedAt is timestamp;
+    }
+
+    match /islamicTreasures/{treasureId} {
+      allow get: if isAdmin() && isValidId(treasureId);
+      allow list: if isAdmin();
+      allow create: if isAdmin()
+        && isValidId(treasureId)
+        && isValidIslamicTreasure(incoming(), treasureId)
+        && incoming().createdByUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isAdmin()
+        && isValidId(treasureId)
+        && isValidIslamicTreasure(incoming(), treasureId)
+        && incoming().id == existing().id
+        && incoming().createdByUid == existing().createdByUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'questionLead', 'factLine1', 'factLine2', 'evidenceText',
+          'evidenceRef', 'closingNote', 'isActive', 'updatedAt'
+        ]);
+      allow delete: if isAdmin() && isValidId(treasureId);
+    }
+
+    match /platformContent/{docId} {
+      allow get: if (isAdmin() || isSignedIn()) && docId == 'activeIslamicTreasure';
+      allow list: if false;
+      allow create: if isAdmin()
+        && docId == 'activeIslamicTreasure'
+        && isValidActiveIslamicTreasure(incoming(), docId)
+        && incoming().updatedByUid == request.auth.uid
+        && incoming().updatedAt == request.time
+        && existsAfter(/databases/$(database)/documents/islamicTreasures/$(incoming().treasureId));
+      allow update: if isAdmin()
+        && docId == 'activeIslamicTreasure'
+        && isValidActiveIslamicTreasure(incoming(), docId)
+        && incoming().id == existing().id
+        && incoming().updatedByUid == request.auth.uid
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'treasureId', 'questionLead', 'factLine1', 'factLine2',
+          'evidenceText', 'evidenceRef', 'closingNote', 'updatedByUid', 'updatedAt'
+        ])
+        && existsAfter(/databases/$(database)/documents/islamicTreasures/$(incoming().treasureId));
+      allow delete: if isAdmin() && docId == 'activeIslamicTreasure';
+    }
+
+    // ============================================================
+    // Phone Password Recovery Aliases & Secret Answer Vault (Zero SMS)
+    // ============================================================
+    function isValidPhoneLoginAlias(data, phoneDigits) {
+      return data.keys().hasAll(['phoneDigits', 'authEmail', 'ownerUid', 'securityQuestion', 'updatedAt'])
+        && data.keys().hasOnly(['phoneDigits', 'authEmail', 'ownerUid', 'securityQuestion', 'updatedAt'])
+        && data.phoneDigits is string && data.phoneDigits == phoneDigits
+        && phoneDigits.matches('^201[0125][0-9]{8}$')
+        && data.ownerUid is string && isValidId(data.ownerUid)
+        && data.authEmail is string
+        && data.authEmail.size() <= 120
+        && data.authEmail.matches('^' + phoneDigits + '(\\.r[0-9]{1,16})?@phone\\.moaskar\\.app$')
+        && data.securityQuestion is string
+        && data.securityQuestion.size() >= 1 && data.securityQuestion.size() <= 160
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPhoneRecoverySecret(data, phoneDigits) {
+      return data.keys().hasAll(['phoneDigits', 'ownerUid', 'secretHash', 'proofHash', 'updatedAt'])
+        && data.keys().hasOnly(['phoneDigits', 'ownerUid', 'secretHash', 'proofHash', 'updatedAt'])
+        && data.phoneDigits is string && data.phoneDigits == phoneDigits
+        && phoneDigits.matches('^201[0125][0-9]{8}$')
+        && data.ownerUid is string && isValidId(data.ownerUid)
+        && data.secretHash is string && data.secretHash.size() == 64 && data.secretHash.matches('^[a-f0-9]{64}$')
+        && data.proofHash is string && data.proofHash.size() == 64 && data.proofHash.matches('^[a-f0-9]{64}$')
+        && data.updatedAt is timestamp;
+    }
+
+    match /phoneLoginAliases/{phoneDigits} {
+      allow get: if phoneDigits.matches('^201[0125][0-9]{8}$');
+      allow list: if false;
+      allow create: if isPrimaryOrProfileOwnerForPhone(phoneDigits)
+        && phoneDigits.matches('^201[0125][0-9]{8}$')
+        && isValidPhoneLoginAlias(incoming(), phoneDigits)
+        && incoming().ownerUid == request.auth.uid
+        && incoming().updatedAt == request.time
+        && existsAfter(/databases/$(database)/documents/phoneRecoverySecrets/$(phoneDigits))
+        && getAfter(/databases/$(database)/documents/phoneRecoverySecrets/$(phoneDigits)).data.ownerUid == request.auth.uid;
+      allow update: if isStudentPhoneEmailUser()
+        && phoneDigits.matches('^201[0125][0-9]{8}$')
+        && isValidPhoneLoginAlias(incoming(), phoneDigits)
+        && incoming().updatedAt == request.time
+        && (
+          (
+            existing().ownerUid == request.auth.uid
+            && incoming().ownerUid == existing().ownerUid
+            && incoming().authEmail == existing().authEmail
+          ) ||
+          (
+            request.auth.token.email.matches('^' + phoneDigits + '\\.r[0-9]{1,16}@phone\\.moaskar\\.app$')
+            && incoming().ownerUid == request.auth.uid
+            && incoming().authEmail == request.auth.token.email
+            && exists(/databases/$(database)/documents/phoneRecoverySecrets/$(phoneDigits))
+            && get(/databases/$(database)/documents/phoneRecoverySecrets/$(phoneDigits)).data.ownerUid == request.auth.uid
+          )
+        );
+      allow delete: if isAdmin() || (isVerifiedOrPhoneStudent() && existing().ownerUid == request.auth.uid);
+    }
+
+    match /phoneRecoverySecrets/{phoneDigits} {
+      allow get, list: if false;
+      allow create: if isPrimaryOrProfileOwnerForPhone(phoneDigits)
+        && phoneDigits.matches('^201[0125][0-9]{8}$')
+        && !exists(/databases/$(database)/documents/phoneRecoverySecrets/$(phoneDigits))
+        && isValidPhoneRecoverySecret(incoming(), phoneDigits)
+        && incoming().ownerUid == request.auth.uid
+        && incoming().updatedAt == request.time;
+      allow update: if isStudentPhoneEmailUser()
+        && phoneDigits.matches('^201[0125][0-9]{8}$')
+        && isValidPhoneRecoverySecret(incoming(), phoneDigits)
+        && incoming().updatedAt == request.time
+        && (
+          (
+            existing().ownerUid == request.auth.uid
+            && incoming().ownerUid == existing().ownerUid
+          ) ||
+          (
+            request.auth.token.email.matches('^' + phoneDigits + '\\.r[0-9]{1,16}@phone\\.moaskar\\.app$')
+            && incoming().ownerUid == request.auth.uid
+            && incoming().proofHash == existing().secretHash
+            && incoming().secretHash == existing().secretHash
+          )
+        );
+      allow delete: if isAdmin() || (isVerifiedOrPhoneStudent() && existing().ownerUid == request.auth.uid);
+    }
+  }
+}

@@ -1,0 +1,668 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Public-safe student profile storing display name, chosen avatar, and active camp reference.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 50 },
+        "avatarUrl": { "type": "string", "minLength": 1, "maxLength": 40000 },
+        "campId": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 120 },
+        "phone": { "type": "string", "maxLength": 20, "pattern": "^\\+201[0125][0-9]{8}$" },
+        "groupCampId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "avatarUrl", "campId", "createdAt", "updatedAt"]
+    },
+    "PhoneLoginAlias": {
+      "title": "PhoneLoginAlias",
+      "description": "Opaque auth-email pointer and non-sensitive security question label for SMS-free phone+password login and recovery.",
+      "type": "object",
+      "properties": {
+        "phoneDigits": { "type": "string", "pattern": "^201[0125][0-9]{8}$" },
+        "authEmail": { "type": "string", "maxLength": 120 },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "securityQuestion": { "type": "string", "maxLength": 160 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["phoneDigits", "authEmail", "ownerUid", "securityQuestion", "updatedAt"]
+    },
+    "PhoneRecoverySecret": {
+      "title": "PhoneRecoverySecret",
+      "description": "Non-readable SHA-256 security answer hash vault used to authorize SMS-free password reset.",
+      "type": "object",
+      "properties": {
+        "phoneDigits": { "type": "string", "pattern": "^201[0125][0-9]{8}$" },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "secretHash": { "type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[a-f0-9]{64}$" },
+        "proofHash": { "type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[a-f0-9]{64}$" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["phoneDigits", "ownerUid", "secretHash", "proofHash", "updatedAt"]
+    },
+    "InviteCode": {
+      "title": "InviteCode",
+      "description": "Unique invite code lookup mapping a short code to a 2-student study camp.",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "minLength": 4, "maxLength": 20, "pattern": "^[A-Z0-9\\-]+$" },
+        "campId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "campName": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "isFull": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["code", "campId", "ownerUid", "campName", "isFull", "createdAt", "updatedAt"]
+    },
+    "Camp": {
+      "title": "Camp",
+      "description": "20-day closed study camp strictly shared between at most two students.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "inviteCode": { "type": "string", "minLength": 4, "maxLength": 20, "pattern": "^[A-Z0-9\\-]+$" },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "member1Uid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "member1Name": { "type": "string", "minLength": 1, "maxLength": 50 },
+        "member1Avatar": { "type": "string", "minLength": 1, "maxLength": 40000 },
+        "member1LastActivity": { "type": "string", "maxLength": 160 },
+        "member1LastActiveAt": { "type": "string", "format": "date-time" },
+        "member1StudyMinutes": { "type": "integer" },
+        "member2Uid": { "type": "string", "maxLength": 128 },
+        "member2Name": { "type": "string", "maxLength": 50 },
+        "member2Avatar": { "type": "string", "maxLength": 40000 },
+        "member2LastActivity": { "type": "string", "maxLength": 160 },
+        "member2LastActiveAt": { "type": "string", "format": "date-time" },
+        "member2StudyMinutes": { "type": "integer" },
+        "memberCount": { "type": "integer" },
+        "startDate": { "type": "string", "minLength": 10, "maxLength": 10, "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+        "heroImageUrl": { "type": "string", "maxLength": 60000 },
+        "status": { "type": "string", "enum": ["waiting", "active", "completed"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id", "name", "inviteCode", "ownerUid",
+        "member1Uid", "member1Name", "member1Avatar", "member1LastActivity", "member1LastActiveAt", "member1StudyMinutes",
+        "member2Uid", "member2Name", "member2Avatar", "member2LastActivity", "member2LastActiveAt", "member2StudyMinutes",
+        "memberCount", "startDate", "status", "createdAt", "updatedAt"
+      ]
+    },
+    "CampTask": {
+      "title": "CampTask",
+      "description": "Study task on a specific day (1..20) with dual independent completion flags for both students.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "campId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "day": { "type": "integer" },
+        "subject": { "type": "string", "enum": ["arabic", "english", "biology", "chemistry", "physics", "math", "history", "geography", "statistics", "geology"] },
+        "taskType": { "type": "string", "enum": ["watch_lecture", "study_lecture", "solve_homework", "solve_questions", "revision", "comprehensive_exam", "custom"] },
+        "customTypeLabel": { "type": "string", "maxLength": 40 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "notes": { "type": "string", "maxLength": 400 },
+        "bgImageUrl": { "type": "string", "maxLength": 60000 },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "member1Done": { "type": "boolean" },
+        "member1DoneAtMs": { "type": "integer" },
+        "member2Done": { "type": "boolean" },
+        "member2DoneAtMs": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id", "campId", "day", "subject", "taskType", "customTypeLabel", "title", "notes",
+        "createdBy", "member1Done", "member1DoneAtMs", "member2Done", "member2DoneAtMs", "createdAt", "updatedAt"
+      ]
+    },
+    "CampMessage": {
+      "title": "CampMessage",
+      "description": "Encouragement message exchanged between the two camp partners.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "campId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "senderUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "senderName": { "type": "string", "minLength": 1, "maxLength": 50 },
+        "senderAvatar": { "type": "string", "minLength": 1, "maxLength": 40000 },
+        "type": { "type": "string", "enum": ["normal", "advice", "dua", "quote", "love", "custom"] },
+        "customLabel": { "type": "string", "maxLength": 40 },
+        "content": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "isBanner": { "type": "boolean" },
+        "parentMessageId": { "type": "string", "maxLength": 128 },
+        "partnerReaction": { "type": "string", "maxLength": 32 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "campId", "senderUid", "senderName", "senderAvatar", "type", "customLabel", "content", "isBanner", "createdAt"]
+    },
+    "CampSurprise": {
+      "title": "CampSurprise",
+      "description": "Virtual gift or celebration card sent from one partner to the other.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "campId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "senderUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "senderName": { "type": "string", "minLength": 1, "maxLength": 50 },
+        "recipientUid": { "type": "string", "maxLength": 128 },
+        "kind": { "type": "string", "enum": ["rose", "heart", "star", "congrats", "medal", "surprise_note"] },
+        "note": { "type": "string", "maxLength": 400 },
+        "opened": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "campId", "senderUid", "senderName", "recipientUid", "kind", "note", "opened", "createdAt", "updatedAt"]
+    },
+    "StudySession": {
+      "title": "StudySession",
+      "description": "Completed Pomodoro study session logged by a student.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "campId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "subject": { "type": "string", "enum": ["arabic", "english", "biology", "chemistry", "physics", "math", "history", "geography", "statistics", "geology", "general"] },
+        "durationMinutes": { "type": "integer" },
+        "day": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "campId", "userUid", "subject", "durationMinutes", "day", "createdAt"]
+    },
+    "CampNotification": {
+      "title": "CampNotification",
+      "description": "Real-time notification event inside a study camp.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "campId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "actorUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "targetUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "type": { "type": "string", "enum": ["lecture_done", "task_completed", "new_message", "new_question", "new_surprise", "new_day", "camp_ending"] },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "body": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "readBy": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "campId", "actorUid", "targetUid", "type", "title", "body", "readBy", "createdAt", "updatedAt"]
+    },
+    "LittleQuestion": {
+      "title": "LittleQuestion",
+      "description": "Cute crystalline text or photo question shared between the two camp partners with replies and emoji reactions.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "campId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "senderUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "senderName": { "type": "string", "minLength": 1, "maxLength": 50 },
+        "senderAvatar": { "type": "string", "minLength": 1, "maxLength": 40000 },
+        "crystalStyle": { "type": "string", "enum": ["toty_sapphire", "rose_quartz", "starlight_gold", "aurora_amethyst"] },
+        "content": { "type": "string", "maxLength": 1000 },
+        "imageUrl": { "type": "string", "maxLength": 90000 },
+        "parentQuestionId": { "type": "string", "maxLength": 128 },
+        "partnerReaction": { "type": "string", "maxLength": 32 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "campId", "senderUid", "senderName", "senderAvatar", "crystalStyle", "content", "imageUrl", "createdAt"]
+    },
+    "FcmToken": {
+      "title": "FcmToken",
+      "description": "Owner-only Web Push FCM registration token bound to a student UID, device, and active camp.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "campId": { "type": "string", "maxLength": 128 },
+        "token": { "type": "string", "minLength": 20, "maxLength": 512 },
+        "platform": { "type": "string", "enum": ["web"] },
+        "deviceLabel": { "type": "string", "maxLength": 80 },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "lastUsedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "uid", "campId", "token", "platform", "deviceLabel", "active", "createdAt", "updatedAt", "lastUsedAt"]
+    },
+    "NotificationPreferences": {
+      "title": "NotificationPreferences",
+      "description": "Owner-only per-category push notification settings respected by Cloud Functions.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "enabled": { "type": "boolean" },
+        "lecture_done": { "type": "boolean" },
+        "task_completed": { "type": "boolean" },
+        "new_message": { "type": "boolean" },
+        "new_question": { "type": "boolean" },
+        "new_surprise": { "type": "boolean" },
+        "new_day": { "type": "boolean" },
+        "camp_ending": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "uid", "enabled", "lecture_done", "task_completed",
+        "new_message", "new_question", "new_surprise", "new_day", "camp_ending", "updatedAt"
+      ]
+    },
+    "GroupInviteCode": {
+      "title": "GroupInviteCode",
+      "description": "Unique invite code lookup mapping a short code to an admin-created Group Camp (up to 50 students).",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "minLength": 4, "maxLength": 20, "pattern": "^[A-Z0-9\\-]+$" },
+        "campId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["code", "campId", "createdAt", "updatedAt"]
+    },
+    "GroupCamp": {
+      "title": "GroupCamp",
+      "description": "Group study camp hosting up to 50 students with competitive exams and leaderboard.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "description": { "type": "string", "maxLength": 500 },
+        "coverImageUrl": { "type": "string", "maxLength": 180000 },
+        "coverStoragePath": { "type": "string", "maxLength": 300 },
+        "maxMembers": { "type": "integer", "minimum": 1, "maximum": 50 },
+        "memberCount": { "type": "integer", "minimum": 0, "maximum": 50 },
+        "inviteCode": { "type": "string", "minLength": 4, "maxLength": 20, "pattern": "^[A-Z0-9\\-]+$" },
+        "status": { "type": "string", "enum": ["open", "closed"] },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "description", "coverImageUrl", "coverStoragePath", "maxMembers", "memberCount", "inviteCode", "status", "createdByUid", "createdAt", "updatedAt"]
+    },
+    "GroupCampMember": {
+      "title": "GroupCampMember",
+      "description": "Student membership and independent leaderboard stats inside a Group Camp.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "campId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 50 },
+        "avatarUrl": { "type": "string", "maxLength": 40000 },
+        "totalScore": { "type": "number", "minimum": 0 },
+        "examsTakenCount": { "type": "integer", "minimum": 0 },
+        "totalCorrectAnswers": { "type": "integer", "minimum": 0 },
+        "totalQuestionsAnswered": { "type": "integer", "minimum": 0 },
+        "completionPercent": { "type": "number", "minimum": 0, "maximum": 100 },
+        "lastExamScore": { "type": "number", "minimum": 0 },
+        "joinedAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "campId", "displayName", "avatarUrl", "totalScore", "examsTakenCount", "totalCorrectAnswers", "totalQuestionsAnswered", "completionPercent", "lastExamScore", "joinedAt", "updatedAt"]
+    },
+    "GroupExam": {
+      "title": "GroupExam",
+      "description": "Scheduled electronic competitive exam created by admin inside a Group Camp.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "campId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "subject": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "unit": { "type": "string", "maxLength": 80 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "instructions": { "type": "string", "maxLength": 2000 },
+        "durationMinutes": { "type": "integer", "minimum": 1, "maximum": 360 },
+        "totalScore": { "type": "number", "minimum": 0 },
+        "questionsCount": { "type": "integer", "minimum": 0, "maximum": 150 },
+        "startsAtMs": { "type": "integer" },
+        "endsAtMs": { "type": "integer" },
+        "maxAttempts": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "resultsReleaseAtMs": { "type": "integer" },
+        "allowReviewAfterSubmit": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["draft", "published"] },
+        "attemptsStartedCount": { "type": "integer", "minimum": 0 },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id", "campId", "title", "subject", "unit", "description", "instructions",
+        "durationMinutes", "totalScore", "questionsCount", "startsAtMs", "endsAtMs",
+        "maxAttempts", "resultsReleaseAtMs", "allowReviewAfterSubmit", "status",
+        "attemptsStartedCount", "createdByUid", "createdAt", "updatedAt"
+      ]
+    },
+    "GroupExamQuestion": {
+      "title": "GroupExamQuestion",
+      "description": "Individual exam question supporting MCQ, Image + 4 Option Buttons, True/False, and Scientific formulas.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "examId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "campId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "order": { "type": "integer", "minimum": 0 },
+        "type": { "type": "string", "enum": ["mcq", "image_mcq", "true_false", "scientific_mcq"] },
+        "promptText": { "type": "string", "maxLength": 2000 },
+        "imageUrl": { "type": "string", "maxLength": 220000 },
+        "imageStoragePath": { "type": "string", "maxLength": 300 },
+        "options": { "type": "array", "maxItems": 6 },
+        "correctOptionIndex": { "type": "integer", "minimum": 0, "maximum": 5 },
+        "score": { "type": "number", "minimum": 0.25, "maximum": 1000 },
+        "explanation": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "examId", "campId", "order", "type", "promptText", "imageUrl", "imageStoragePath", "options", "correctOptionIndex", "score", "explanation", "createdAt", "updatedAt"]
+    },
+    "GroupExamAttempt": {
+      "title": "GroupExamAttempt",
+      "description": "Student attempt with server-anchored start time, auto-saved answers, and graded score.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 160, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "campId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "examId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "studentName": { "type": "string", "minLength": 1, "maxLength": 50 },
+        "studentAvatar": { "type": "string", "maxLength": 40000 },
+        "attemptNumber": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "status": { "type": "string", "enum": ["in_progress", "submitted", "timed_out"] },
+        "answers": { "type": "object" },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "startedAtMs": { "type": "integer" },
+        "deadlineAtMs": { "type": "integer" },
+        "submittedAt": { "type": "string", "format": "date-time" },
+        "submittedAtMs": { "type": "integer" },
+        "score": { "type": "number", "minimum": 0 },
+        "maxScore": { "type": "number", "minimum": 0 },
+        "percentage": { "type": "number", "minimum": 0, "maximum": 100 },
+        "correctCount": { "type": "integer", "minimum": 0 },
+        "totalQuestions": { "type": "integer", "minimum": 0 },
+        "graded": { "type": "boolean" },
+        "adminApproved": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id", "campId", "examId", "uid", "studentName", "studentAvatar",
+        "attemptNumber", "status", "answers", "startedAt", "startedAtMs",
+        "deadlineAtMs", "submittedAtMs", "score", "maxScore", "percentage",
+        "correctCount", "totalQuestions", "graded", "adminApproved", "updatedAt"
+      ]
+    },
+    "StudentExamHistoryEntry": {
+      "title": "StudentExamHistoryEntry",
+      "description": "Permanent preserved historical exam result for a student across camps.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 160, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "campId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "campName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "examId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "examTitle": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "subject": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "attemptNumber": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "status": { "type": "string", "enum": ["in_progress", "submitted", "timed_out"] },
+        "score": { "type": "number", "minimum": 0 },
+        "maxScore": { "type": "number", "minimum": 0 },
+        "percentage": { "type": "number", "minimum": 0, "maximum": 100 },
+        "correctCount": { "type": "integer", "minimum": 0 },
+        "totalQuestions": { "type": "integer", "minimum": 0 },
+        "resultsReleaseAtMs": { "type": "integer" },
+        "submittedAtMs": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id", "uid", "campId", "campName", "examId", "examTitle", "subject",
+        "attemptNumber", "status", "score", "maxScore", "percentage", "correctCount",
+        "totalQuestions", "resultsReleaseAtMs", "submittedAtMs", "createdAt"
+      ]
+    },
+    "GroupLittleQuestion": {
+      "title": "GroupLittleQuestion",
+      "description": "Shared question or reply published inside a Group Camp visible to all joined camp members, supporting photo attachments and multi-member emoji reactions.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "campId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "senderUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "senderName": { "type": "string", "minLength": 1, "maxLength": 50 },
+        "senderAvatar": { "type": "string", "maxLength": 40000 },
+        "crystalStyle": { "type": "string", "enum": ["toty_sapphire", "rose_quartz", "starlight_gold", "aurora_amethyst"] },
+        "content": { "type": "string", "maxLength": 1000 },
+        "imageUrl": { "type": "string", "maxLength": 90000 },
+        "parentQuestionId": { "type": "string", "maxLength": 128 },
+        "partnerReaction": { "type": "string", "maxLength": 32 },
+        "reactions": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id", "campId", "senderUid", "senderName", "senderAvatar",
+        "crystalStyle", "content", "imageUrl", "parentQuestionId", "partnerReaction",
+        "reactions", "createdAt", "updatedAt"
+      ]
+    },
+    "GroupExamPublisher": {
+      "title": "GroupExamPublisher",
+      "description": "Private camp-scoped authorization record granting a verified camp member access to create and publish new exams.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "campId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "accessProof": { "type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[a-f0-9]{64}$" },
+        "grantedAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "campId", "accessProof", "grantedAt", "updatedAt"]
+    },
+    "PushSubscription": {
+      "title": "PushSubscription",
+      "description": "Standard W3C Web Push device subscription bound to a student UID and deterministic endpoint hash.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "endpoint": { "type": "string", "minLength": 16, "maxLength": 1500 },
+        "p256dh": { "type": "string", "minLength": 20, "maxLength": 256 },
+        "auth": { "type": "string", "minLength": 10, "maxLength": 128 },
+        "platform": { "type": "string", "enum": ["android", "ios", "desktop", "web"] },
+        "installMode": { "type": "string", "enum": ["pwa", "browser"] },
+        "deviceLabel": { "type": "string", "maxLength": 80 },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "lastUsedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "uid", "endpoint", "p256dh", "auth", "platform", "installMode", "deviceLabel", "active", "createdAt", "updatedAt", "lastUsedAt"]
+    },
+    "AdminBroadcastNotification": {
+      "title": "AdminBroadcastNotification",
+      "description": "Admin-authored broadcast notification campaign with optional compressed image, deep-link route, and delivery counts.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "body": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "imageUrl": { "type": "string", "maxLength": 180000 },
+        "targetRoute": { "type": "string", "enum": ["home", "azkar", "exams", "leaderboard", "little_question", "settings", "notification_view"] },
+        "recipientCount": { "type": "integer", "minimum": 0 },
+        "targetedDevicesCount": { "type": "integer", "minimum": 0 },
+        "acceptedCount": { "type": "integer", "minimum": 0 },
+        "failedCount": { "type": "integer", "minimum": 0 },
+        "staleRemovedCount": { "type": "integer", "minimum": 0 },
+        "openedCount": { "type": "integer", "minimum": 0 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "createdByUid", "title", "body", "imageUrl", "targetRoute", "recipientCount", "targetedDevicesCount", "acceptedCount", "failedCount", "staleRemovedCount", "openedCount", "createdAt", "updatedAt"]
+    },
+    "BroadcastDeliveryReceipt": {
+      "title": "BroadcastDeliveryReceipt",
+      "description": "Per-device delivery/open acknowledgment written by the signed-in student device upon opening a broadcast notification.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "notificationId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "subscriptionId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "status": { "type": "string", "enum": ["delivered", "opened"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "notificationId", "uid", "subscriptionId", "status", "createdAt", "updatedAt"]
+    },
+    "IslamicTreasure": {
+      "title": "IslamicTreasure",
+      "description": "Admin-authored daily religious fact (معلومة يمكن اول مرة تعرفها) with optional Quranic or Hadith evidence and closing motivational note.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "questionLead": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "factLine1": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "factLine2": { "type": "string", "maxLength": 300 },
+        "evidenceText": { "type": "string", "maxLength": 500 },
+        "evidenceRef": { "type": "string", "maxLength": 120 },
+        "closingNote": { "type": "string", "maxLength": 200 },
+        "isActive": { "type": "boolean" },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "questionLead", "factLine1", "factLine2", "evidenceText", "evidenceRef", "closingNote", "isActive", "createdByUid", "createdAt", "updatedAt"]
+    },
+    "ActiveIslamicTreasure": {
+      "title": "ActiveIslamicTreasure",
+      "description": "Published singleton snapshot of the active religious fact displayed to all students in the Azkar section.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^activeIslamicTreasure$" },
+        "treasureId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "questionLead": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "factLine1": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "factLine2": { "type": "string", "maxLength": 300 },
+        "evidenceText": { "type": "string", "maxLength": 500 },
+        "evidenceRef": { "type": "string", "maxLength": 120 },
+        "closingNote": { "type": "string", "maxLength": 200 },
+        "updatedByUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "treasureId", "questionLead", "factLine1", "factLine2", "evidenceText", "evidenceRef", "closingNote", "updatedByUid", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/userProfiles/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Owner-only student profile documents (admin readable)."
+    },
+    "/userProfiles/{userId}/fcmTokens/{tokenId}": {
+      "schema": { "$ref": "#/entities/FcmToken" },
+      "description": "Owner-only registered Web Push FCM device tokens."
+    },
+    "/userProfiles/{userId}/preferences/{prefId}": {
+      "schema": { "$ref": "#/entities/NotificationPreferences" },
+      "description": "Owner-only push notification category preferences."
+    },
+    "/userProfiles/{userId}/examHistory/{historyId}": {
+      "schema": { "$ref": "#/entities/StudentExamHistoryEntry" },
+      "description": "Permanent preserved student exam results across any Group Camps joined."
+    },
+    "/inviteCodes/{code}": {
+      "schema": { "$ref": "#/entities/InviteCode" },
+      "description": "Direct get-only invite code lookup for joining an open 2-student camp."
+    },
+    "/camps/{campId}": {
+      "schema": { "$ref": "#/entities/Camp" },
+      "description": "Closed 20-day study camps accessible strictly to their two members."
+    },
+    "/camps/{campId}/tasks/{taskId}": {
+      "schema": { "$ref": "#/entities/CampTask" },
+      "description": "20-day schedule tasks with dual member1/member2 completion state."
+    },
+    "/camps/{campId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/CampMessage" },
+      "description": "Our Messages encouragement cards and short top-bar banners."
+    },
+    "/camps/{campId}/surprises/{surpriseId}": {
+      "schema": { "$ref": "#/entities/CampSurprise" },
+      "description": "Surprise Corner virtual gifts and celebratory notes."
+    },
+    "/camps/{campId}/studySessions/{sessionId}": {
+      "schema": { "$ref": "#/entities/StudySession" },
+      "description": "Completed Pomodoro study sessions."
+    },
+    "/camps/{campId}/littleQuestions/{questionId}": {
+      "schema": { "$ref": "#/entities/LittleQuestion" },
+      "description": "Little Question (سؤال صغنن) photo/text questions, partner replies, and reactions."
+    },
+    "/camps/{campId}/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/CampNotification" },
+      "description": "In-app Notification Center events for camp milestones and partner updates."
+    },
+    "/groupInviteCodes/{code}": {
+      "schema": { "$ref": "#/entities/GroupInviteCode" },
+      "description": "Direct get-only invite code lookup for joining an open Group Camp."
+    },
+    "/groupCamps/{campId}": {
+      "schema": { "$ref": "#/entities/GroupCamp" },
+      "description": "Group study camps hosting up to 50 students."
+    },
+    "/groupCamps/{campId}/members/{uid}": {
+      "schema": { "$ref": "#/entities/GroupCampMember" },
+      "description": "Group camp participants and independent camp leaderboard rankings."
+    },
+    "/groupCamps/{campId}/exams/{examId}": {
+      "schema": { "$ref": "#/entities/GroupExam" },
+      "description": "Competitive electronic exams inside a Group Camp."
+    },
+    "/groupCamps/{campId}/exams/{examId}/questions/{questionId}": {
+      "schema": { "$ref": "#/entities/GroupExamQuestion" },
+      "description": "Questions for a specific Group Camp exam."
+    },
+    "/groupCamps/{campId}/exams/{examId}/attempts/{attemptId}": {
+      "schema": { "$ref": "#/entities/GroupExamAttempt" },
+      "description": "Student exam attempts with server-anchored timer and saved responses."
+    },
+    "/groupCamps/{campId}/littleQuestions/{questionId}": {
+      "schema": { "$ref": "#/entities/GroupLittleQuestion" },
+      "description": "Group-wide Little Question (سؤال صغنن) posts, replies, and per-member emoji reactions shared with all members inside the Group Camp."
+    },
+    "/groupCamps/{campId}/examPublishers/{uid}": {
+      "schema": { "$ref": "#/entities/GroupExamPublisher" },
+      "description": "Private owner-get-only exam publisher grant inside a Group Camp."
+    },
+    "/userProfiles/{userId}/pushSubscriptions/{subId}": {
+      "schema": { "$ref": "#/entities/PushSubscription" },
+      "description": "Registered W3C Web Push device subscriptions per student (owner write/delete, admin readable and stale-cleanable)."
+    },
+    "/adminBroadcastNotifications/{notifId}": {
+      "schema": { "$ref": "#/entities/AdminBroadcastNotification" },
+      "description": "Admin group broadcast notification history and detail payloads."
+    },
+    "/adminBroadcastNotifications/{notifId}/deliveries/{deliveryId}": {
+      "schema": { "$ref": "#/entities/BroadcastDeliveryReceipt" },
+      "description": "Student device delivery/open confirmation receipts for a broadcast notification."
+    },
+    "/islamicTreasures/{treasureId}": {
+      "schema": { "$ref": "#/entities/IslamicTreasure" },
+      "description": "Admin-managed archive of daily religious facts (معلومة يمكن اول مرة تعرفها)."
+    },
+    "/platformContent/{docId}": {
+      "schema": { "$ref": "#/entities/ActiveIslamicTreasure" },
+      "description": "Singleton platform content documents (activeIslamicTreasure) readable by signed-in students."
+    },
+    "/phoneLoginAliases/{phoneDigits}": {
+      "schema": { "$ref": "#/entities/PhoneLoginAlias" },
+      "description": "Direct get-only auth email pointer and non-sensitive security question label for Egyptian student mobile numbers."
+    },
+    "/phoneRecoverySecrets/{phoneDigits}": {
+      "schema": { "$ref": "#/entities/PhoneRecoverySecret" },
+      "description": "Non-readable SHA-256 security answer vault enforcing SMS-free password recovery ownership."
+    }
+  }
+}

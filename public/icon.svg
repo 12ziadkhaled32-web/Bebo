@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#ec4899" />
+      <stop offset="50%" stop-color="#8b5cf6" />
+      <stop offset="100%" stop-color="#06b6d4" />
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="140" y1="120" x2="372" y2="390" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#fef08a" />
+      <stop offset="50%" stop-color="#fbbf24" />
+      <stop offset="100%" stop-color="#f59e0b" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+  <rect x="28" y="28" width="456" height="456" rx="92" fill="#130826" fill-opacity="0.28" stroke="#ffffff" stroke-opacity="0.3" stroke-width="6" />
+  <path d="M256 116L372 172V256C372 330 322 386 256 410C190 386 140 330 140 256V172L256 116Z" fill="#ffffff" fill-opacity="0.16" stroke="url(#goldGrad)" stroke-width="14" stroke-linejoin="round" />
+  <path d="M256 190C241 168 205 168 190 194C175 220 192 260 256 318C320 260 337 220 322 194C307 168 271 168 256 190Z" fill="#ffffff" />
+  <circle cx="256" cy="144" r="14" fill="#fde047" />
+</svg>

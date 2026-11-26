@@ -1,0 +1,674 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --font-display: 'Cairo', system-ui, sans-serif;
+    --font-body: 'Readex Pro', 'Cairo', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+
+  html {
+    font-family: var(--font-body);
+    scroll-behavior: smooth;
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: var(--font-display);
+    text-wrap: balance;
+  }
+
+  .font-mono-num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Luminous multi-color animated aurora background */
+@keyframes auroraDrift {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  33% {
+    transform: translate3d(24px, -18px, 0) scale(1.04);
+  }
+  66% {
+    transform: translate3d(-18px, 20px, 0) scale(0.97);
+  }
+}
+
+@keyframes floatGentle {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  50% {
+    transform: translate3d(0, -10px, 0) rotate(2deg);
+  }
+}
+
+@keyframes shimmerSlide {
+  0% {
+    transform: translateX(100%);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes surpriseBloom {
+  0% {
+    opacity: 0;
+    transform: scale(0.75) translateY(20px);
+  }
+  65% {
+    opacity: 1;
+    transform: scale(1.04) translateY(-4px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes heartbeatPulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  14% {
+    transform: scale(1.28);
+  }
+  28% {
+    transform: scale(1);
+  }
+  42% {
+    transform: scale(1.18);
+  }
+  58% {
+    transform: scale(1);
+  }
+}
+
+@keyframes ecgTraceFlow {
+  0% {
+    stroke-dashoffset: 120;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes ecgSweepGlow {
+  0% {
+    transform: translate3d(-120%, 0, 0);
+  }
+  100% {
+    transform: translate3d(260%, 0, 0);
+  }
+}
+
+@keyframes petalDrift {
+  0% {
+    transform: translate3d(0, -16px, 0) rotate(0deg);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.72;
+  }
+  50% {
+    transform: translate3d(-22px, 140px, 0) rotate(110deg);
+    opacity: 0.65;
+  }
+  85% {
+    opacity: 0.5;
+  }
+  100% {
+    transform: translate3d(14px, 310px, 0) rotate(220deg);
+    opacity: 0;
+  }
+}
+
+@keyframes globalPetalFall {
+  0% {
+    transform: translate3d(0, -8vh, 0) rotate(0deg);
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.42;
+  }
+  50% {
+    transform: translate3d(-26px, 50vh, 0) rotate(140deg);
+    opacity: 0.36;
+  }
+  88% {
+    opacity: 0.28;
+  }
+  100% {
+    transform: translate3d(18px, 108vh, 0) rotate(280deg);
+    opacity: 0;
+  }
+}
+
+@keyframes globalPetalFallReverse {
+  0% {
+    transform: translate3d(0, -8vh, 0) rotate(0deg);
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.38;
+  }
+  50% {
+    transform: translate3d(28px, 52vh, 0) rotate(-130deg);
+    opacity: 0.32;
+  }
+  88% {
+    opacity: 0.24;
+  }
+  100% {
+    transform: translate3d(-16px, 108vh, 0) rotate(-260deg);
+    opacity: 0;
+  }
+}
+
+@keyframes botanicalSway {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  50% {
+    transform: translate3d(0, -5px, 0) rotate(2.5deg);
+  }
+}
+
+.animate-aurora {
+  animation: auroraDrift 18s ease-in-out infinite;
+}
+
+.animate-aurora-slow {
+  animation: auroraDrift 24s ease-in-out infinite reverse;
+}
+
+.animate-float-gentle {
+  animation: floatGentle 6s ease-in-out infinite;
+}
+
+.animate-shimmer {
+  animation: shimmerSlide 2.6s ease-in-out infinite;
+}
+
+.animate-surprise-bloom {
+  animation: surpriseBloom 0.55s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-heartbeat {
+  animation: heartbeatPulse 1.35s ease-in-out infinite;
+}
+
+.animate-ecg-trace {
+  animation: ecgTraceFlow 1.6s linear infinite;
+}
+
+.animate-ecg-sweep {
+  animation: ecgSweepGlow 2.4s ease-in-out infinite;
+}
+
+.animate-petal-drift {
+  animation: petalDrift 13s ease-in-out infinite;
+}
+
+.animate-global-petal {
+  animation: globalPetalFall 22s linear infinite;
+}
+
+.animate-global-petal-reverse {
+  animation: globalPetalFallReverse 26s linear infinite;
+}
+
+.animate-botanical-sway {
+  animation: botanicalSway 6.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-aurora,
+  .animate-aurora-slow,
+  .animate-float-gentle,
+  .animate-shimmer,
+  .animate-surprise-bloom,
+  .animate-heartbeat,
+  .animate-ecg-trace,
+  .animate-ecg-sweep,
+  .animate-petal-drift,
+  .animate-global-petal,
+  .animate-global-petal-reverse,
+  .animate-botanical-sway,
+  .fifa-glow-foil-text,
+  .onboarding-glow-text {
+    animation: none !important;
+  }
+}
+
+/* Glassmorphism surfaces (Light & Dark) */
+.glass-surface {
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(236, 72, 153, 0.14);
+  box-shadow:
+    0 10px 35px -10px rgba(168, 85, 247, 0.12),
+    0 4px 14px -4px rgba(14, 165, 233, 0.08);
+}
+
+.dark .glass-surface {
+  background: rgba(20, 17, 42, 0.74);
+  border: 1px solid rgba(244, 114, 182, 0.2);
+  box-shadow:
+    0 14px 40px -12px rgba(0, 0, 0, 0.65),
+    0 4px 20px -6px rgba(168, 85, 247, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.glass-surface-strong {
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  border: 1px solid rgba(244, 114, 182, 0.22);
+  box-shadow:
+    0 18px 45px -15px rgba(219, 39, 119, 0.16),
+    0 6px 20px -6px rgba(6, 182, 212, 0.12);
+}
+
+.dark .glass-surface-strong {
+  background: rgba(24, 20, 50, 0.88);
+  border: 1px solid rgba(236, 72, 153, 0.28);
+  box-shadow:
+    0 20px 50px -15px rgba(0, 0, 0, 0.75),
+    0 8px 26px -6px rgba(236, 72, 153, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.neon-glow-pink {
+  box-shadow: 0 8px 28px -6px rgba(236, 72, 153, 0.38), 0 0 18px -4px rgba(168, 85, 247, 0.28);
+}
+
+.dark .neon-glow-pink {
+  box-shadow: 0 10px 32px -6px rgba(236, 72, 153, 0.52), 0 0 24px -4px rgba(168, 85, 247, 0.38);
+}
+
+.neon-glow-cyan {
+  box-shadow: 0 8px 28px -6px rgba(6, 182, 212, 0.34), 0 0 18px -4px rgba(16, 185, 129, 0.24);
+}
+
+.dark .neon-glow-cyan {
+  box-shadow: 0 10px 32px -6px rgba(6, 182, 212, 0.48), 0 0 24px -4px rgba(16, 185, 129, 0.34);
+}
+
+.neon-glow-gold {
+  box-shadow: 0 8px 28px -6px rgba(245, 158, 11, 0.36), 0 0 18px -4px rgba(236, 72, 153, 0.22);
+}
+
+.dark .neon-glow-gold {
+  box-shadow: 0 10px 34px -6px rgba(245, 158, 11, 0.48), 0 0 24px -4px rgba(236, 72, 153, 0.32);
+}
+
+/* Custom subtle scrollbars */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(244, 240, 250, 0.6);
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: rgba(15, 12, 32, 0.85);
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #f472b6, #a855f7, #38bdf8);
+  border-radius: 9999px;
+}
+
+/* Cross-browser artwork edge feathering for LittleQuestionView */
+.lq-mask-fade-r {
+  -webkit-mask-image: linear-gradient(to right, #000 72%, transparent 100%);
+  mask-image: linear-gradient(to right, #000 72%, transparent 100%);
+}
+
+.lq-mask-fade-l {
+  -webkit-mask-image: linear-gradient(to left, #000 72%, transparent 100%);
+  mask-image: linear-gradient(to left, #000 72%, transparent 100%);
+}
+
+.lq-mask-vignette-bl {
+  -webkit-mask-image: radial-gradient(ellipse at bottom left, #000 58%, transparent 98%);
+  mask-image: radial-gradient(ellipse at bottom left, #000 58%, transparent 98%);
+}
+
+/* Scoped Apple San Francisco font stack (SF Pro / SF Arabic) for LittleQuestionView only */
+.lq-san-francisco {
+  --font-display: -apple-system, BlinkMacSystemFont, 'SF Arabic', 'SF Pro Display', 'SF Pro Text', 'Readex Pro', system-ui, sans-serif;
+  --font-body: -apple-system, BlinkMacSystemFont, 'SF Arabic', 'SF Pro Text', 'SF Pro Display', 'Readex Pro', system-ui, sans-serif;
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.lq-san-francisco :is(h1, h2, h3, h4, .font-display, button, input, textarea, select) {
+  font-family: var(--font-display);
+}
+
+/* FIFA Mobile card style horizontal metallic foil gleam + glowing text */
+@keyframes fifaTextSweep {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes fifaTextGlow {
+  0%, 100% {
+    filter: drop-shadow(0 0 6px rgba(244, 114, 182, 0.55)) drop-shadow(0 0 12px rgba(251, 191, 36, 0.35));
+  }
+  50% {
+    filter: drop-shadow(0 0 10px rgba(232, 121, 249, 0.85)) drop-shadow(0 0 18px rgba(251, 191, 36, 0.65));
+  }
+}
+
+.fifa-glow-foil-text {
+  background-image: linear-gradient(
+    112deg,
+    #f5d0fe 0%,
+    #f9a8d4 16.5%,
+    #f5d0fe 33.3%,
+    #fbbf24 43%,
+    #ffffff 50%,
+    #fbbf24 57%,
+    #f5d0fe 66.7%,
+    #f9a8d4 83.5%,
+    #f5d0fe 100%
+  );
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation:
+    fifaTextSweep 3.2s linear infinite,
+    fifaTextGlow 2.4s ease-in-out infinite;
+}
+
+@keyframes onboardingGlowPulseLight {
+  0%, 100% {
+    filter: drop-shadow(0 0 5px rgba(236, 72, 153, 0.34)) drop-shadow(0 0 12px rgba(168, 85, 247, 0.24));
+  }
+  50% {
+    filter: drop-shadow(0 0 10px rgba(236, 72, 153, 0.6)) drop-shadow(0 0 18px rgba(245, 158, 11, 0.45));
+  }
+}
+
+.onboarding-glow-text {
+  background-image: linear-gradient(
+    112deg,
+    #be185d 0%,
+    #9333ea 18%,
+    #d97706 38%,
+    #fde047 50%,
+    #d97706 62%,
+    #9333ea 82%,
+    #be185d 100%
+  );
+  background-size: 280% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation:
+    fifaTextSweep 3s linear infinite,
+    onboardingGlowPulseLight 2.4s ease-in-out infinite;
+}
+
+.dark .onboarding-glow-text {
+  background-image: linear-gradient(
+    112deg,
+    #f5d0fe 0%,
+    #f472b6 18%,
+    #fbbf24 40%,
+    #ffffff 50%,
+    #fbbf24 60%,
+    #f472b6 82%,
+    #f5d0fe 100%
+  );
+  animation:
+    fifaTextSweep 3s linear infinite,
+    fifaTextGlow 2.4s ease-in-out infinite;
+}
+
+/* ============================================================
+   3D Prism, Rainbow Spectrum, Crystal, Gold & Rose Azkar Styles
+   ============================================================ */
+
+.azkar-3d-stage {
+  perspective: 1400px;
+}
+
+.azkar-3d-preserve {
+  transform-style: preserve-3d;
+}
+
+.azkar-3d-depth-lg {
+  transform: translateZ(26px);
+}
+
+.azkar-3d-depth-md {
+  transform: translateZ(16px);
+}
+
+@keyframes azkarSpectrumFlow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes azkarDiamondFloat3D {
+  0%, 100% {
+    transform: perspective(700px) translate3d(0, 0, 0) rotateX(6deg) rotateY(-12deg) rotateZ(-2deg);
+  }
+  50% {
+    transform: perspective(700px) translate3d(0, -10px, 14px) rotateX(-8deg) rotateY(14deg) rotateZ(4deg);
+  }
+}
+
+@keyframes azkarCrystalOrbit3D {
+  0% {
+    transform: perspective(800px) rotateX(18deg) rotateY(0deg);
+  }
+  50% {
+    transform: perspective(800px) rotateX(-14deg) rotateY(180deg);
+  }
+  100% {
+    transform: perspective(800px) rotateX(18deg) rotateY(360deg);
+  }
+}
+
+.azkar-rainbow-frame {
+  background: linear-gradient(
+    125deg,
+    #ef4444,
+    #f97316,
+    #facc15,
+    #22c55e,
+    #06b6d4,
+    #3b82f6,
+    #a855f7,
+    #ec4899,
+    #ef4444
+  );
+  background-size: 260% 260%;
+  animation: azkarSpectrumFlow 7s ease infinite;
+}
+
+.azkar-rainbow-text {
+  background-image: linear-gradient(
+    90deg,
+    #ef4444 0%,
+    #f97316 16%,
+    #eab308 32%,
+    #22c55e 48%,
+    #06b6d4 65%,
+    #3b82f6 82%,
+    #a855f7 100%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: azkarSpectrumFlow 6s linear infinite;
+}
+
+.azkar-gold-foil {
+  background-image: linear-gradient(
+    115deg,
+    #fef08a 0%,
+    #f59e0b 24%,
+    #fffbeb 48%,
+    #fbbf24 72%,
+    #d97706 100%
+  );
+  background-size: 240% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: azkarSpectrumFlow 4.5s ease-in-out infinite;
+}
+
+.azkar-diamond-3d {
+  animation: azkarDiamondFloat3D 5.2s ease-in-out infinite;
+  transform-style: preserve-3d;
+}
+
+.azkar-crystal-orbit-3d {
+  animation: azkarCrystalOrbit3D 14s linear infinite;
+  transform-style: preserve-3d;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .azkar-rainbow-frame,
+  .azkar-rainbow-text,
+  .azkar-gold-foil,
+  .azkar-diamond-3d,
+  .azkar-crystal-orbit-3d {
+    animation: none !important;
+  }
+}
+
+/* Royal Cosmic Gold & Violet Azkar Styles */
+.azkar-royal-stage {
+  background:
+    radial-gradient(ellipse 80% 45% at 50% 0%, rgba(139, 92, 246, 0.24), transparent 70%),
+    radial-gradient(ellipse 70% 50% at 15% 45%, rgba(217, 70, 239, 0.16), transparent 65%),
+    radial-gradient(ellipse 70% 50% at 85% 75%, rgba(56, 189, 248, 0.14), transparent 65%),
+    linear-gradient(180deg, #100525 0%, #160934 48%, #0d0520 100%);
+}
+
+.azkar-royal-card-gold {
+  background:
+    radial-gradient(circle at 12% 55%, rgba(251, 191, 36, 0.14), transparent 46%),
+    radial-gradient(circle at 88% 15%, rgba(168, 85, 247, 0.14), transparent 48%),
+    linear-gradient(145deg, rgba(22, 10, 44, 0.94) 0%, rgba(14, 7, 30, 0.96) 100%);
+  border: 1.5px solid rgba(251, 191, 36, 0.65);
+  box-shadow:
+    0 18px 46px -14px rgba(0, 0, 0, 0.78),
+    0 0 28px -6px rgba(251, 191, 36, 0.34),
+    inset 0 1px 0 rgba(254, 240, 138, 0.32);
+}
+
+.azkar-royal-card-violet {
+  background:
+    radial-gradient(circle at 15% 50%, rgba(168, 85, 247, 0.18), transparent 48%),
+    radial-gradient(circle at 85% 20%, rgba(56, 189, 248, 0.12), transparent 45%),
+    linear-gradient(145deg, rgba(20, 9, 44, 0.94) 0%, rgba(12, 6, 28, 0.96) 100%);
+  border: 1.5px solid rgba(192, 132, 252, 0.58);
+  box-shadow:
+    0 18px 46px -14px rgba(0, 0, 0, 0.78),
+    0 0 30px -6px rgba(168, 85, 247, 0.42),
+    inset 0 1px 0 rgba(233, 213, 255, 0.25);
+}
+
+.azkar-royal-card-emerald {
+  background:
+    radial-gradient(circle at 20% 50%, rgba(16, 185, 129, 0.16), transparent 50%),
+    linear-gradient(145deg, rgba(14, 24, 38, 0.94) 0%, rgba(11, 13, 32, 0.96) 100%);
+  border: 1.5px solid rgba(52, 211, 153, 0.65);
+  box-shadow:
+    0 18px 46px -14px rgba(0, 0, 0, 0.78),
+    0 0 28px -6px rgba(52, 211, 153, 0.38),
+    inset 0 1px 0 rgba(167, 243, 208, 0.28);
+}
+
+.azkar-btn-rainbow-counter {
+  background: linear-gradient(90deg, #6d28d9 0%, #8b5cf6 38%, #3b82f6 76%, #0ea5e9 100%);
+  box-shadow:
+    0 8px 24px -6px rgba(124, 58, 237, 0.65),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+.azkar-btn-gold-metallic {
+  background: linear-gradient(135deg, #fef08a 0%, #fbbf24 48%, #d97706 100%);
+  box-shadow:
+    0 8px 22px -6px rgba(245, 158, 11, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+
+.azkar-gold-medallion {
+  background: radial-gradient(circle at 32% 28%, #fffbeb 0%, #fde047 28%, #f59e0b 68%, #b45309 100%);
+  box-shadow:
+    0 0 18px rgba(251, 191, 36, 0.65),
+    inset 0 1px 2px rgba(255, 255, 255, 0.75);
+}
+
+.azkar-mask-radial {
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 44%, rgba(0, 0, 0, 0.7) 64%, transparent 94%);
+  mask-image: radial-gradient(ellipse at center, #000 44%, rgba(0, 0, 0, 0.7) 64%, transparent 94%);
+}
+
+.azkar-mask-card-art {
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 48%, rgba(0, 0, 0, 0.65) 70%, transparent 96%);
+  mask-image: radial-gradient(ellipse at center, #000 48%, rgba(0, 0, 0, 0.65) 70%, transparent 96%);
+}
+
+/* Group Leaderboard cosmic stage vignette blending */
+.lb-mask-vignette {
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 36%, rgba(0, 0, 0, 0.72) 60%, transparent 90%);
+  mask-image: radial-gradient(ellipse at center, #000 36%, rgba(0, 0, 0, 0.72) 60%, transparent 90%);
+}
+
+.lb-mask-bottom-corner {
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 42%, rgba(0, 0, 0, 0.7) 66%, transparent 92%);
+  mask-image: radial-gradient(ellipse at center, #000 42%, rgba(0, 0, 0, 0.7) 66%, transparent 92%);
+}
+
+/* Azkar Royal Stage directional blending masks */
+.azkar-mask-fade-right {
+  -webkit-mask-image: linear-gradient(to right, #000 46%, rgba(0, 0, 0, 0.58) 72%, transparent 96%);
+  mask-image: linear-gradient(to right, #000 46%, rgba(0, 0, 0, 0.58) 72%, transparent 96%);
+}
+
+.azkar-mask-fade-left {
+  -webkit-mask-image: linear-gradient(to left, #000 46%, rgba(0, 0, 0, 0.58) 72%, transparent 96%);
+  mask-image: linear-gradient(to left, #000 46%, rgba(0, 0, 0, 0.58) 72%, transparent 96%);
+}
+
+
